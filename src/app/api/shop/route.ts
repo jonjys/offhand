@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const accessToken = minted?.token ?? adminToken;
     const graphql = createShopifyClient(domain, accessToken);
     await graphql<{ locations: { nodes: { id: string }[] } }>(
-      `query OffhandLocations { locations(first: 1) { nodes: { id } } }`,
+      `query OffhandLocations { locations(first: 1) { nodes { id } } }`,
       {},
     );
 
