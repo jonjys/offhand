@@ -1,23 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { catalog } from "@/lib/catalog";
 import { isPublicFeedUrl, parseFeed } from "@/lib/feed";
 import { pushToShopify } from "@/lib/shopify";
+import { readShops, writeShops, type LogLine, type ShopRecord } from "@/lib/shop-store";
 import { applyPlan, describe, drift, planSync, type ShelfItem, type SupplierItem } from "@/lib/sync";
 
-export type LogLine = { at: string; text: string };
-
-export type ShopRecord = {
-  customerId: string;
-  domain: string;
-  token: string;
-  feedUrl: string;
-  until: string;
-  locationId?: string;
-  shelf: ShelfItem[];
-  log: LogLine[];
-  supplier?: SupplierItem[];
-};
+export type { LogLine, ShopRecord };
 
 export type FloorSnapshot = {
   running: true;
@@ -39,8 +26,8 @@ type Machine = {
   timers: ReturnType<typeof setInterval>[];
 };
 
-const filePath = path.join(process.cwd(), "data", "shops.json");
 const globalKey = "__offhand";
+const syncGapMs = 20_000;
 let loading: Promise<void> | null = null;
 
 function now() {
@@ -59,19 +46,8 @@ function remember(machine: Machine) {
   (globalThis as typeof globalThis & { [globalKey]?: Machine })[globalKey] = machine;
 }
 
-async function loadShops() {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw) as { shops?: ShopRecord[] };
-    return parsed.shops ?? [];
-  } catch {
-    return [];
-  }
-}
-
 async function saveShops(shops: ShopRecord[]) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify({ shops }, null, 2));
+  await writeShops(shops);
 }
 
 function snapshot(machine: Machine): FloorSnapshot {
@@ -158,15 +134,10 @@ export function startMachine() {
   };
   advanceDemo(machine);
   machine.timers.push(setInterval(() => advanceDemo(machine), 4000));
-  machine.timers.push(
-    setInterval(() => {
-      void (async () => {
-        for (const shop of machine.shops) await advanceShop(machine, shop);
-        if (machine.shops.length) await saveShops(machine.shops);
-      })();
-    }, 20000),
-  );
-  loading = loadShops().then((shops) => {
+  if (!process.env.VERCEL) {
+    machine.timers.push(setInterval(() => void syncShops(false), syncGapMs));
+  }
+  loading = readShops().then((shops) => {
     if (machine.shops.length === 0) machine.shops = shops;
   });
   remember(machine);
@@ -194,18 +165,39 @@ export function publicShop(shop: ShopRecord) {
   };
 }
 
-export async function findShop(customerId: string) {
+export async function syncShops(force: boolean) {
   await shopsReady();
+  const machine = startMachine();
+  machine.shops = await readShops();
+  const nowMs = Date.now();
+  let ran = false;
+  for (const shop of machine.shops) {
+    const previous = shop.lastSyncAt ? Date.parse(shop.lastSyncAt) : 0;
+    if (!force && nowMs - previous < syncGapMs) continue;
+    await advanceShop(machine, shop);
+    shop.lastSyncAt = new Date(nowMs).toISOString();
+    ran = true;
+  }
+  if (ran) await saveShops(machine.shops);
+  return machine.shops.length;
+}
+
+export async function findShop(customerId: string) {
+  await syncShops(false);
   return startMachine().shops.find((shop) => shop.customerId === customerId) ?? null;
 }
 
 export async function saveShop(record: ShopRecord) {
   await shopsReady();
   const machine = startMachine();
+  machine.shops = await readShops();
   const index = machine.shops.findIndex((shop) => shop.customerId === record.customerId);
-  if (index >= 0) machine.shops[index] = record;
-  else machine.shops.push(record);
+  const next = index >= 0 ? { ...machine.shops[index], ...record, shelf: record.shelf, log: record.log } : record;
+  if (index >= 0) machine.shops[index] = next;
+  else machine.shops.push(next);
   await saveShops(machine.shops);
-  void advanceShop(machine, record).then(() => saveShops(machine.shops));
-  return publicShop(record);
+  await advanceShop(machine, next);
+  next.lastSyncAt = new Date().toISOString();
+  await saveShops(machine.shops);
+  return publicShop(next);
 }

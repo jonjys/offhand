@@ -8,6 +8,8 @@ $29 points that same machine at one Shopify store for 30 days. Paste the shop do
 
 The custom app needs read and write access for products and inventory, and read access for locations.
 
+A connected store is saved in private storage, so the shop token survives a new server. On the free host the store syncs once a day, and again while the paid page is open.
+
 ## Run locally
 
 ```bash
