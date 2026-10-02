@@ -1,6 +1,6 @@
 import { catalog } from "@/lib/catalog";
 import { isPublicFeedUrl, parseFeed } from "@/lib/feed";
-import { pushToShopify } from "@/lib/shopify";
+import { ensureShopifyAccess, pushToShopify } from "@/lib/shopify";
 import { readShops, writeShops, type LogLine, type ShopRecord } from "@/lib/shop-store";
 import { applyPlan, describe, drift, planSync, type ShelfItem, type SupplierItem } from "@/lib/sync";
 
@@ -87,6 +87,13 @@ async function readFeed(url: string) {
 
 async function advanceShop(machine: Machine, shop: ShopRecord) {
   if (Date.parse(shop.until) < Date.now()) return;
+  try {
+    await ensureShopifyAccess(shop);
+  } catch (error) {
+    const text = error instanceof Error ? error.message : "Shopify refused the Client ID and Client secret.";
+    if (shop.log[0]?.text !== text) shop.log = [stamp(text), ...shop.log].slice(0, 30);
+    return;
+  }
   let supplier = machine.supplier;
   if (shop.feedUrl) {
     try {
