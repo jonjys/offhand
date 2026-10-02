@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { catalog } from "./catalog";
 import { parseFeed } from "./feed";
-import { pushToShopify, shopDomain } from "./shopify";
+import { accessStillGood, mintShopifyToken, pushToShopify, shopDomain } from "./shopify";
 import { planSync, runUnattended } from "./sync";
 
 test("the machine lists a full shelf on its own, then pulls and reprices", () => {
@@ -36,6 +36,30 @@ test("json feeds and quoted csv cells work", () => {
   assert.equal(json[0]?.stock, 3);
   const csv = parseFeed('sku,title,price,stock\nQ-1,"Coat, navy",55,1\n');
   assert.equal(csv[0]?.title, "Coat, navy");
+});
+
+test("client credentials are exchanged and refreshed before they expire", async () => {
+  const calls: string[] = [];
+  const fetchImpl: typeof fetch = async (url, init) => {
+    calls.push(String(url));
+    const body = String(init?.body);
+    assert.match(body, /grant_type=client_credentials/);
+    assert.match(body, /client_id=abc123/);
+    return Response.json({ access_token: "fresh-token", expires_in: 86399, scope: "write_products" });
+  };
+
+  const minted = await mintShopifyToken("demo-shop.myshopify.com", "abc123", "secret-value", fetchImpl);
+  assert.equal(minted.token, "fresh-token");
+  assert.equal(accessStillGood(minted.expiresAt, Date.now()), true);
+  assert.equal(accessStillGood(new Date(Date.now() + 30_000).toISOString(), Date.now()), false);
+  assert.equal(accessStillGood(undefined, Date.now()), false);
+  assert.match(calls[0] ?? "", /demo-shop\.myshopify\.com\/admin\/oauth\/access_token/);
+
+  const refused: typeof fetch = async () => Response.json({ error: "shop_not_permitted" }, { status: 400 });
+  await assert.rejects(
+    () => mintShopifyToken("demo-shop.myshopify.com", "abc123", "secret-value", refused),
+    /Install Offhand on this store/,
+  );
 });
 
 test("shopify push lists a product and stores the ids", async () => {
