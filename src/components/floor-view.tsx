@@ -90,7 +90,8 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
   const [paid, setPaid] = useState(false);
   const [shop, setShop] = useState<ShopState | null>(null);
   const [domain, setDomain] = useState("");
-  const [adminToken, setAdminToken] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [feedUrl, setFeedUrl] = useState("");
   const [busy, setBusy] = useState<"pay" | "connect" | null>(null);
   const [error, setError] = useState(cancelled ? "Checkout was cancelled. The floor kept running." : "");
@@ -160,7 +161,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
       const response = await fetch("/api/shop", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token, domain, adminToken, feedUrl }),
+        body: JSON.stringify({ token, domain, clientId, clientSecret, feedUrl }),
       });
       const data = (await response.json()) as { shop?: ShopState; error?: string };
       if (!response.ok || !data.shop) {
@@ -169,7 +170,8 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
         return;
       }
       setShop(data.shop);
-      setAdminToken("");
+      setClientId("");
+      setClientSecret("");
       setBusy(null);
     } catch {
       setError("The shop could not be connected.");
@@ -229,7 +231,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
             <p className="text-sm leading-6 text-muted-foreground">
               Paste the shop once. Leave the feed empty and this live catalog is the supplier. Or paste a public CSV, including a published Google Sheet. Columns are detected. After this, you do not approve listings.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <label className="grid gap-2 text-sm" htmlFor="shop-domain">
                 Shop domain
                 <input
@@ -238,17 +240,31 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
                   onChange={(event) => setDomain(event.target.value)}
                   placeholder="your-store.myshopify.com"
                   className="h-11 rounded-lg border border-border bg-background px-3"
+                  autoComplete="off"
                   required
                 />
               </label>
-              <label className="grid gap-2 text-sm" htmlFor="admin-token">
-                Admin API token
+              <label className="grid gap-2 text-sm" htmlFor="client-id">
+                Client ID
                 <input
-                  id="admin-token"
-                  value={adminToken}
-                  onChange={(event) => setAdminToken(event.target.value)}
-                  placeholder="shpat_..."
+                  id="client-id"
+                  value={clientId}
+                  onChange={(event) => setClientId(event.target.value)}
+                  placeholder="From Dev Dashboard, Settings"
                   className="h-11 rounded-lg border border-border bg-background px-3"
+                  autoComplete="off"
+                  required
+                />
+              </label>
+              <label className="grid gap-2 text-sm" htmlFor="client-secret">
+                Client secret
+                <input
+                  id="client-secret"
+                  value={clientSecret}
+                  onChange={(event) => setClientSecret(event.target.value)}
+                  placeholder="Tap the eye, then copy"
+                  className="h-11 rounded-lg border border-border bg-background px-3"
+                  type="password"
                   autoComplete="off"
                   required
                 />
@@ -265,7 +281,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
               />
             </label>
             <p className="text-xs leading-5 text-muted-foreground">
-              The custom app needs read and write for products and inventory, plus read locations. Offhand keeps the token on the server and uses it on its own.
+              Offhand keeps the Client ID and Client secret on the server and asks Shopify for a fresh token before the old one expires.
             </p>
             <Button type="submit" className="h-11 w-fit px-4" disabled={busy !== null}>
               {busy === "connect" ? <Loader2 className="animate-spin" /> : null}
