@@ -4,7 +4,7 @@ A Shopify resale store that stocks itself.
 
 The floor on the homepage is already running. A built-in supplier catalog changes price and stock on its own. Offhand lists anything in stock, reprices when the supplier price moves, and pulls the listing when the count hits zero. There is no approval queue.
 
-$29 points that same machine at one Shopify store for 30 days. Paste the shop domain and an Admin API token once. Leave the feed blank to follow the live catalog, or paste a public CSV (a published Google Sheet works). Columns are detected. After that, the server keeps syncing.
+$29 points that same machine at one Shopify store for 30 days. Paste the shop domain, the Dev Dashboard Client ID, and the Client secret once. Offhand refreshes the Shopify token on its own. Leave the feed blank to follow the live catalog, or paste a public CSV (a published Google Sheet works). Columns are detected. After that, the server keeps syncing.
 
 The custom app needs read and write access for products and inventory, and read access for locations.
 

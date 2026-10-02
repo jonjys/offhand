@@ -15,7 +15,7 @@ export default function PrivacyPage() {
       <div className="grid gap-4 text-sm leading-7 text-muted-foreground">
         <p>The public floor uses a catalog that lives in this app. It is not your store and it does not read your Shopify account.</p>
         <p>
-          If you pay, Stripe processes the card for Nytto Labs. The browser keeps a key so this device can open the connected store. The Admin API token stays on the server and is used only to list, reprice, and pull products.
+          If you pay, Stripe processes the card for Nytto Labs. The browser keeps a key so this device can open the connected store. The Client ID and Client secret stay on the server. Offhand uses them only to refresh the Shopify token and to list, reprice, and pull products.
         </p>
         <p>A supplier feed URL is fetched by the server on its own. Offhand does not ask you to review a listing before it goes up.</p>
       </div>
