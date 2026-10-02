@@ -40,6 +40,67 @@ export function shopDomain(value: string) {
   return host;
 }
 
+const refreshLeadMs = 60_000;
+
+export function accessStillGood(expiresAt: string | undefined, nowMs: number) {
+  if (!expiresAt) return false;
+  const expires = Date.parse(expiresAt);
+  return Number.isFinite(expires) && expires - nowMs > refreshLeadMs;
+}
+
+export async function mintShopifyToken(
+  domain: string,
+  clientId: string,
+  clientSecret: string,
+  fetchImpl: typeof fetch = fetch,
+) {
+  const shop = shopDomain(domain);
+  const id = clientId.trim();
+  const secret = clientSecret.trim();
+  if (!id || !secret) throw new Error("Paste the Client ID and the Client secret.");
+
+  const response = await fetchImpl(`https://${shop}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: id,
+      client_secret: secret,
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  } | null;
+
+  if (!response.ok || !payload?.access_token) {
+    if (payload?.error === "shop_not_permitted") {
+      throw new Error("Install Offhand on this store in the Dev Dashboard, then paste the credentials again.");
+    }
+    throw new Error(payload?.error_description || "Shopify refused the Client ID and Client secret.");
+  }
+
+  const expiresIn = payload.expires_in && payload.expires_in > 0 ? payload.expires_in : 86_399;
+  return {
+    token: payload.access_token,
+    expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+  };
+}
+
+export async function ensureShopifyAccess<T extends { domain: string; token: string; clientId?: string; clientSecret?: string; tokenExpiresAt?: string }>(
+  shop: T,
+  fetchImpl: typeof fetch = fetch,
+) {
+  if (!shop.clientId || !shop.clientSecret) return shop.token;
+  if (shop.token && accessStillGood(shop.tokenExpiresAt, Date.now())) return shop.token;
+  const minted = await mintShopifyToken(shop.domain, shop.clientId, shop.clientSecret, fetchImpl);
+  shop.token = minted.token;
+  shop.tokenExpiresAt = minted.expiresAt;
+  return shop.token;
+}
+
 export function createShopifyClient(domain: string, token: string, fetchImpl: typeof fetch = fetch): Graphql {
   const shop = shopDomain(domain);
   return async function graphql<T>(query: string, variables: Record<string, unknown>) {
