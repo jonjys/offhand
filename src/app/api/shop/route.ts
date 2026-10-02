@@ -1,6 +1,6 @@
 import { findShop, publicShop, saveShop, type ShopRecord } from "@/lib/machine";
 import { isPublicFeedUrl } from "@/lib/feed";
-import { createShopifyClient, shopDomain } from "@/lib/shopify";
+import { createShopifyClient, mintShopifyToken, shopDomain } from "@/lib/shopify";
 import { entitlement, verifyToken } from "@/lib/stripe-server";
 
 export const runtime = "nodejs";
@@ -29,9 +29,19 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { token?: string; domain?: string; adminToken?: string; feedUrl?: string } | null;
-  if (!body?.token || !body.domain || !body.adminToken) {
-    return Response.json({ error: "Paste the shop domain and the admin token." }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as {
+    token?: string;
+    domain?: string;
+    clientId?: string;
+    clientSecret?: string;
+    adminToken?: string;
+    feedUrl?: string;
+  } | null;
+  const clientId = body?.clientId?.trim() ?? "";
+  const clientSecret = body?.clientSecret?.trim() ?? "";
+  const adminToken = body?.adminToken?.trim() ?? "";
+  if (!body?.token || !body.domain || (!adminToken && (!clientId || !clientSecret))) {
+    return Response.json({ error: "Paste the shop domain, the Client ID, and the Client secret." }, { status: 400 });
   }
 
   try {
@@ -45,9 +55,11 @@ export async function POST(request: Request) {
       return Response.json({ error: "The feed URL has to be a public https link." }, { status: 400 });
     }
 
-    const graphql = createShopifyClient(domain, body.adminToken.trim());
+    const minted = clientId && clientSecret ? await mintShopifyToken(domain, clientId, clientSecret) : null;
+    const accessToken = minted?.token ?? adminToken;
+    const graphql = createShopifyClient(domain, accessToken);
     await graphql<{ locations: { nodes: { id: string }[] } }>(
-      `query OffhandLocations { locations(first: 1) { nodes { id } } }`,
+      `query OffhandLocations { locations(first: 1) { nodes: { id } } }`,
       {},
     );
 
@@ -55,7 +67,10 @@ export async function POST(request: Request) {
     const record: ShopRecord = {
       customerId,
       domain,
-      token: body.adminToken.trim(),
+      token: accessToken,
+      clientId: clientId || undefined,
+      clientSecret: clientSecret || undefined,
+      tokenExpiresAt: minted?.expiresAt,
       feedUrl,
       until: access.until,
       locationId: existing?.locationId,

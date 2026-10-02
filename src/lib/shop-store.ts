@@ -11,6 +11,9 @@ export type ShopRecord = {
   token: string;
   feedUrl: string;
   until: string;
+  clientId?: string;
+  clientSecret?: string;
+  tokenExpiresAt?: string;
   locationId?: string;
   shelf: ShelfItem[];
   log: LogLine[];
