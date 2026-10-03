@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { ReceiptView } from "@/components/receipt-view";
 
 export const metadata: Metadata = {
-  title: "Receipt · Offhand",
+  title: "Receipt",
+  robots: { index: false, follow: false },
 };
 
 export default async function ReceiptPage({

@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy · Offhand",
+  title: "Privacy",
+  description: "What Offhand stores, what it sends to Stripe and Shopify, and what stays on the server.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {
