@@ -114,6 +114,7 @@ test("shopify push lists a product and stores the ids", async () => {
   assert.equal(publish?.variables.id, "gid://shopify/Product/9");
   assert.deepEqual(publish?.variables.input, [{ publicationId: "gid://shopify/Publication/7" }]);
   assert.equal(result.publicationId, "gid://shopify/Publication/7");
+  assert.equal(result.shelf[0]?.published, true);
 
   const set = calls.find((call) => call.query.includes("OffhandProductSet"));
   const input = set?.variables.input as { tags: string[]; vendor: string; descriptionHtml: string };
@@ -130,6 +131,35 @@ test("every listing says who listed it, and keeps the supplier's own words first
   const input = productInput({ sku: "A", title: "Lamp", price: 40, stock: 1 }, "gid://shopify/Location/1") as { tags: string[]; vendor: string };
   assert.deepEqual(input.tags, ["offhand"]);
   assert.equal(input.vendor, "Offhand");
+});
+
+test("listings made before the channel was known are put on it on the next pass", async () => {
+  const published: string[] = [];
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+    if (body.query.includes("OffhandPublications")) return Response.json({ data: { publications: { nodes: [{ id: "gid://shopify/Publication/7", name: "Online Store" }] } } });
+    if (body.query.includes("OffhandPublish")) {
+      published.push(String(body.variables.id));
+      return Response.json({ data: { publishablePublish: { userErrors: [] } } });
+    }
+    throw new Error(`unexpected call ${body.query.slice(0, 30)}`);
+  };
+  const result = await pushToShopify({
+    domain: "demo-shop.myshopify.com",
+    token: "t",
+    actions: [],
+    supplier: catalog,
+    shelf: [
+      { sku: "BOSTON", title: "Birkenstock Boston", price: 58, stock: 5, status: "active", productId: "gid://shopify/Product/1" },
+      { sku: "WM-22", title: "Sony Walkman WM-22", price: 95, stock: 0, status: "draft", productId: "gid://shopify/Product/2" },
+      { sku: "DETROIT", title: "Carhartt Detroit jacket", price: 74, stock: 3, status: "active", productId: "gid://shopify/Product/3", published: true },
+    ],
+    fetchImpl,
+  });
+  assert.deepEqual(published, ["gid://shopify/Product/1"]);
+  assert.equal(result.shelf.find((item) => item.sku === "BOSTON")?.published, true);
+  assert.equal(result.shelf.find((item) => item.sku === "WM-22")?.published, undefined);
+  assert.match(result.notes[0] ?? "", /Put Birkenstock Boston on the online store/);
 });
 
 test("a store without an online store channel is still listed in the admin", async () => {

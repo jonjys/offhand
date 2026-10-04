@@ -183,6 +183,16 @@ async function onlineStoreId(graphql: Graphql, cached?: string | null) {
   return data.publications.nodes.find((node) => node.name === "Online Store")?.id ?? null;
 }
 
+async function publish(graphql: Graphql, productId: string, publicationId: string) {
+  const data = await graphql<{ publishablePublish: { userErrors: { message: string }[] } }>(PUBLISH, {
+    id: productId,
+    input: [{ publicationId }],
+  });
+  if (data.publishablePublish.userErrors.length) {
+    throw new Error(data.publishablePublish.userErrors.map((error) => error.message).join(" "));
+  }
+}
+
 async function locationId(graphql: Graphql, cached?: string) {
   if (cached) return cached;
   const data = await graphql<{ locations: { nodes: { id: string }[] } }>(LOCATIONS, {});
@@ -246,13 +256,8 @@ export async function pushToShopify(input: {
       if (product && (action.type === "list" || action.type === "relist")) {
         resolvedPublication = await onlineStoreId(graphql, resolvedPublication);
         if (resolvedPublication) {
-          const published = await graphql<{ publishablePublish: { userErrors: { message: string }[] } }>(PUBLISH, {
-            id: product.id,
-            input: [{ publicationId: resolvedPublication }],
-          });
-          if (published.publishablePublish.userErrors.length) {
-            throw new Error(published.publishablePublish.userErrors.map((error) => error.message).join(" "));
-          }
+          await publish(graphql, product.id, resolvedPublication);
+          next.published = true;
         }
       }
 
@@ -281,6 +286,22 @@ export async function pushToShopify(input: {
       notes.push(shopNote(action, item, input.domain));
     } catch (error) {
       notes.push(`${item.title} stayed put. ${error instanceof Error ? error.message : "Shopify refused the update."}`);
+    }
+  }
+
+  // Listings made before Offhand published to the channel, or on a store
+  // whose channel appeared later, are put on it now. A handful per run keeps
+  // the daily sync cheap; the rest follow the next day.
+  const unpublished = [...bySku.values()].filter((item) => item.status === "active" && item.productId && !item.published);
+  for (const item of unpublished.slice(0, 10)) {
+    try {
+      resolvedPublication = await onlineStoreId(graphql, resolvedPublication);
+      if (!resolvedPublication) break;
+      await publish(graphql, item.productId as string, resolvedPublication);
+      item.published = true;
+      notes.push(`Put ${item.title} on the online store of ${input.domain}.`);
+    } catch (error) {
+      notes.push(`${item.title} is not on the online store yet. ${error instanceof Error ? error.message : "Shopify refused the update."}`);
     }
   }
 

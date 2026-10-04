@@ -15,6 +15,8 @@ export type ShelfItem = {
   productId?: string;
   variantId?: string;
   inventoryItemId?: string;
+  /** Set once the product is on the Online Store channel. */
+  published?: boolean;
 };
 
 export type Action =
