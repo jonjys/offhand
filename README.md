@@ -6,7 +6,9 @@ The floor on the homepage is already running. A built-in supplier catalog change
 
 $29 points that same machine at one Shopify store for 30 days. Paste the shop domain, the Dev Dashboard Client ID, and the Client secret once. Offhand refreshes the Shopify token on its own. Leave the feed blank to follow the live catalog, or paste a public CSV (a published Google Sheet works). Columns are detected. After that, the server keeps syncing.
 
-The custom app needs read and write access for products and inventory, and read access for locations.
+The custom app needs read and write access for products, inventory and publications, and read access for locations. Publications is what lets Offhand put a listing on the Online Store channel; without it the product exists in the admin but no shopper sees it.
+
+Every listing Offhand writes carries the vendor `Offhand`, the tag `offhand`, and a note saying it was listed from the supplier feed. The store at [pqwbeh-yy.myshopify.com](https://pqwbeh-yy.myshopify.com/collections/stocked-by-offhand) is that machine running against a real Shopify admin, linked from the homepage as proof.
 
 A connected store is saved in private storage, so the shop token survives a new server. On the free host the store syncs once a day, and again while the paid page is open.
 

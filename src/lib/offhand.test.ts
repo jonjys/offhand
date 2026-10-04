@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { catalog } from "./catalog";
 import { parseFeed } from "./feed";
-import { accessStillGood, mintShopifyToken, pushToShopify, shopDomain } from "./shopify";
+import { accessStillGood, listingNote, mintShopifyToken, productInput, pushToShopify, shopDomain } from "./shopify";
 import { planSync, runUnattended } from "./sync";
 
 test("the machine lists a full shelf on its own, then pulls and reprices", () => {
@@ -70,6 +70,12 @@ test("shopify push lists a product and stores the ids", async () => {
     if (body.query.includes("OffhandLocations")) {
       return Response.json({ data: { locations: { nodes: [{ id: "gid://shopify/Location/1" }] } } });
     }
+    if (body.query.includes("OffhandPublications")) {
+      return Response.json({ data: { publications: { nodes: [{ id: "gid://shopify/Publication/7", name: "Online Store" }, { id: "gid://shopify/Publication/8", name: "Point of Sale" }] } } });
+    }
+    if (body.query.includes("OffhandPublish")) {
+      return Response.json({ data: { publishablePublish: { userErrors: [] } } });
+    }
     if (body.query.includes("OffhandProductSet")) {
       return Response.json({
         data: {
@@ -101,4 +107,40 @@ test("shopify push lists a product and stores the ids", async () => {
   assert.equal(result.shelf[0]?.status, "active");
   assert.match(result.notes[0] ?? "", /Listed Nike Dunk Low Panda/);
   assert.ok(calls.some((call) => call.query.includes("productSet")));
+
+  // A listing nobody can see is not a listing: the product is pushed to the
+  // Online Store channel, and the channel id is remembered for next time.
+  const publish = calls.find((call) => call.query.includes("OffhandPublish"));
+  assert.equal(publish?.variables.id, "gid://shopify/Product/9");
+  assert.deepEqual(publish?.variables.input, [{ publicationId: "gid://shopify/Publication/7" }]);
+  assert.equal(result.publicationId, "gid://shopify/Publication/7");
+
+  const set = calls.find((call) => call.query.includes("OffhandProductSet"));
+  const input = set?.variables.input as { tags: string[]; vendor: string; descriptionHtml: string };
+  assert.deepEqual(input.tags, ["offhand"]);
+  assert.equal(input.vendor, "Offhand");
+  assert.match(input.descriptionHtml, /Listed by <a href="https:\/\/offhand\.nyttolabs\.com">Offhand<\/a>/);
+});
+
+test("every listing says who listed it, and keeps the supplier's own words first", () => {
+  const bare = listingNote({ sku: "A", title: "Lamp", price: 40, stock: 1 });
+  assert.match(bare, /^<p>Listed by/);
+  const own = listingNote({ sku: "A", title: "Lamp", price: 40, stock: 1, description: "Brass, 1970s." });
+  assert.match(own, /^<p>Brass, 1970s\.<\/p><p>Listed by/);
+  const input = productInput({ sku: "A", title: "Lamp", price: 40, stock: 1 }, "gid://shopify/Location/1") as { tags: string[]; vendor: string };
+  assert.deepEqual(input.tags, ["offhand"]);
+  assert.equal(input.vendor, "Offhand");
+});
+
+test("a store without an online store channel is still listed in the admin", async () => {
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes("OffhandLocations")) return Response.json({ data: { locations: { nodes: [{ id: "gid://shopify/Location/1" }] } } });
+    if (body.query.includes("OffhandPublications")) return Response.json({ data: { publications: { nodes: [] } } });
+    if (body.query.includes("OffhandPublish")) throw new Error("must not publish without a channel");
+    return Response.json({ data: { productSet: { product: { id: "gid://shopify/Product/1", status: "ACTIVE", variants: { nodes: [] } }, userErrors: [] } } });
+  };
+  const result = await pushToShopify({ domain: "demo-shop.myshopify.com", token: "t", actions: [{ type: "list", sku: "BOSTON" }], supplier: catalog, shelf: [], fetchImpl });
+  assert.equal(result.publicationId, null);
+  assert.match(result.notes[0] ?? "", /Listed Birkenstock Boston/);
 });

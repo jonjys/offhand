@@ -74,6 +74,7 @@ export async function POST(request: Request) {
       feedUrl,
       until: access.until,
       locationId: existing?.locationId,
+      publicationId: existing?.domain === domain ? existing.publicationId : undefined,
       shelf: existing?.domain === domain ? existing.shelf : [],
       log: existing?.log ?? [],
     };

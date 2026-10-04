@@ -112,12 +112,14 @@ async function advanceShop(machine: Machine, shop: ShopRecord) {
       domain: shop.domain,
       token: shop.token,
       locationId: shop.locationId,
+      publicationId: shop.publicationId,
       actions,
       supplier,
       shelf: shop.shelf,
     });
     shop.shelf = result.shelf;
     shop.locationId = result.locationId;
+    shop.publicationId = result.publicationId;
     const fresh = result.notes.filter((note) => note !== shop.log[0]?.text);
     if (fresh.length) shop.log = [...fresh.map(stamp), ...shop.log].slice(0, 30);
   } catch (error) {

@@ -24,6 +24,18 @@ const LOCATIONS = `query OffhandLocations {
   }
 }`;
 
+const ONLINE_STORE = `query OffhandPublications {
+  publications(first: 10) {
+    nodes { id name }
+  }
+}`;
+
+const PUBLISH = `mutation OffhandPublish($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) {
+    userErrors { field message }
+  }
+}`;
+
 const INVENTORY_SET = `mutation OffhandInventory($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
   inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
     userErrors { field message }
@@ -128,7 +140,14 @@ function shopNote(action: Action, item: SupplierItem, domain: string) {
   return `Updated ${item.title} stock on ${domain} to ${action.to}.`;
 }
 
-function productInput(item: SupplierItem, locationId: string, shelf?: ShelfItem, status?: "ACTIVE" | "DRAFT") {
+/** The note every listing carries, so a shopper can see nobody typed it. */
+export function listingNote(item: SupplierItem) {
+  const own = item.description?.trim();
+  const lead = own ? `<p>${own}</p>` : "";
+  return `${lead}<p>Listed by <a href="https://offhand.nyttolabs.com">Offhand</a> from the supplier feed. The price follows the supplier, and the listing is pulled when the supplier runs out.</p>`;
+}
+
+export function productInput(item: SupplierItem, locationId: string, shelf?: ShelfItem, status?: "ACTIVE" | "DRAFT") {
   const variant: Record<string, unknown> = {
     optionValues: [{ optionName: "Title", name: "Default Title" }],
     sku: item.sku,
@@ -140,13 +159,28 @@ function productInput(item: SupplierItem, locationId: string, shelf?: ShelfItem,
 
   const input: Record<string, unknown> = {
     title: item.title,
-    descriptionHtml: `<p>${item.description ?? "Listed by Offhand from the supplier feed."}</p>`,
+    descriptionHtml: listingNote(item),
+    vendor: "Offhand",
+    tags: ["offhand"],
     status: status ?? (item.stock > 0 ? "ACTIVE" : "DRAFT"),
     productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
     variants: [variant],
   };
   if (shelf?.productId) input.id = shelf.productId;
   return input;
+}
+
+/**
+ * A product Shopify holds but the online store does not show is not listed
+ * in any sense a shopper cares about. productSet alone leaves it unpublished,
+ * so every list and relist is followed by a publish to the Online Store
+ * channel. Missing channel (a store without one) is not an error: the
+ * listing still exists in the admin.
+ */
+async function onlineStoreId(graphql: Graphql, cached?: string | null) {
+  if (cached !== undefined) return cached;
+  const data = await graphql<{ publications: { nodes: { id: string; name: string }[] } }>(ONLINE_STORE, {});
+  return data.publications.nodes.find((node) => node.name === "Online Store")?.id ?? null;
 }
 
 async function locationId(graphql: Graphql, cached?: string) {
@@ -161,6 +195,8 @@ export async function pushToShopify(input: {
   domain: string;
   token: string;
   locationId?: string;
+  /** Online Store publication id; null once looked up and absent. */
+  publicationId?: string | null;
   actions: Action[];
   supplier: SupplierItem[];
   shelf: ShelfItem[];
@@ -172,6 +208,7 @@ export async function pushToShopify(input: {
   const bySku = new Map(shelf.map((item) => [item.sku, item]));
   const source = new Map(input.supplier.map((item) => [item.sku, item]));
   let resolvedLocation = input.locationId;
+  let resolvedPublication = input.publicationId;
 
   for (const action of input.actions) {
     const item = source.get(action.sku);
@@ -206,6 +243,19 @@ export async function pushToShopify(input: {
       };
       bySku.set(item.sku, next);
 
+      if (product && (action.type === "list" || action.type === "relist")) {
+        resolvedPublication = await onlineStoreId(graphql, resolvedPublication);
+        if (resolvedPublication) {
+          const published = await graphql<{ publishablePublish: { userErrors: { message: string }[] } }>(PUBLISH, {
+            id: product.id,
+            input: [{ publicationId: resolvedPublication }],
+          });
+          if (published.publishablePublish.userErrors.length) {
+            throw new Error(published.publishablePublish.userErrors.map((error) => error.message).join(" "));
+          }
+        }
+      }
+
       if (next.inventoryItemId && action.type !== "list") {
         const inventory = await graphql<{ inventorySetQuantities: { userErrors: { message: string }[] } }>(INVENTORY_SET, {
           idempotencyKey: `offhand-${item.sku}-${next.stock}-${Date.now()}`,
@@ -234,5 +284,5 @@ export async function pushToShopify(input: {
     }
   }
 
-  return { shelf: [...bySku.values()], notes, locationId: resolvedLocation };
+  return { shelf: [...bySku.values()], notes, locationId: resolvedLocation, publicationId: resolvedPublication };
 }

@@ -1,4 +1,5 @@
 import { FloorView, type FloorSnapshot } from "@/components/floor-view";
+import { demoStore } from "@/lib/demo-store";
 import { getFloor } from "@/lib/machine";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,9 @@ export default async function Home({
           Offhand
         </a>
         <nav className="flex gap-4 text-sm">
+          <a href={demoStore.url} className="underline-offset-4 hover:underline" rel="noopener noreferrer" target="_blank">
+            Live store
+          </a>
           <a href="#store" className="underline-offset-4 hover:underline">
             Your store
           </a>
@@ -41,8 +45,36 @@ export default async function Home({
         <FloorView initial={floor} cancelled={params.cancelled === "1"} />
       </section>
 
+      <section id="proof" className="grid gap-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
+        <p className="text-sm tracking-[0.18em] text-primary uppercase">On a real store</p>
+        <h2 className="font-[family-name:var(--font-fraunces)] text-3xl tracking-tight">
+          The same machine, pointed at a Shopify store you can open.
+        </h2>
+        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+          Every product in the collection below was listed by Offhand from the catalog above. Nobody typed a title or set a price. Open any product and the note on it says so. When the catalog pulls an item, the listing goes with it.
+        </p>
+        <div className="flex flex-wrap gap-3 text-sm">
+          <a
+            href={demoStore.collectionUrl}
+            className="rounded-lg bg-primary px-4 py-2.5 text-primary-foreground underline-offset-4 hover:underline"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Open the live collection
+          </a>
+          <a
+            href={demoStore.howItWorksUrl}
+            className="rounded-lg border border-border px-4 py-2.5 underline-offset-4 hover:underline"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            How that store works
+          </a>
+        </div>
+      </section>
+
       <footer className="border-t border-border pt-6 text-sm leading-6 text-muted-foreground">
-        <p>The floor on this page is the machine, using a live resale catalog. A paid store follows the same rules against your Shopify admin.</p>
+        <p>The floor on this page is the machine, using a live resale catalog. The store linked above is that machine against a real Shopify admin. A paid store follows the same rules against yours.</p>
         <p className="mt-2">Nytto Labs · $29 for 30 days, tax included.</p>
       </footer>
     </main>
