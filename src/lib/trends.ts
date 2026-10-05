@@ -80,26 +80,39 @@ function margin(item: SupplierItem) {
 export function selectTrendProducts(
   supplier: SupplierItem[],
   now = new Date(),
-  limit = 100,
+  limit = 25,
 ) {
   const event = trendForDate(now);
   if (!event) return { event: null, items: [] as SupplierItem[] };
 
   const daysToPeak = Math.max(0, Math.ceil((event.peakAt.getTime() - now.getTime()) / 86_400_000));
+  const protectedTerms = [
+    "disney", "pixar", "marvel", "star wars", "harry potter", "pokemon", "barbie",
+    "minecraft", "fortnite", "netflix", "stranger things", "wednesday addams",
+  ];
+  const euRegions = ["eu", "european union", "sweden", "germany", "poland", "netherlands", "france", "spain", "italy", "denmark", "finland", "estonia", "latvia", "lithuania", "czechia", "austria", "belgium"];
   const scored = supplier.flatMap((item) => {
-    if (item.stock <= 0 || !item.imageUrl) return [];
+    if (item.stock <= 0 || !item.imageUrl || item.rightsCleared !== true) return [];
     const text = haystack(item);
+    if (protectedTerms.some((term) => text.includes(term))) return [];
     const matches = event.terms.filter((term) => text.includes(term));
     if (!matches.length) return [];
     const grossMargin = margin(item);
     if (grossMargin !== null && grossMargin < 0.35) return [];
-    if (item.deliveryDays && item.deliveryDays > Math.max(3, daysToPeak - 3)) return [];
-    const score = matches.length * 25 + Math.min(item.stock, 25) + Math.round((grossMargin ?? 0.35) * 20) - (item.deliveryDays ?? 7);
+
+    const digital = item.fulfillmentType === "digital";
+    const euWarehouse = item.fulfillmentType === "physical"
+      && euRegions.some((region) => item.warehouseRegion?.trim().toLowerCase() === region);
+    const deliveryDays = item.deliveryDays;
+    if (!digital && (!euWarehouse || deliveryDays === undefined || deliveryDays < 1 || deliveryDays > 5)) return [];
+    if (!digital && deliveryDays > daysToPeak) return [];
+
+    const score = matches.length * 25 + Math.min(item.stock, 25) + Math.round((grossMargin ?? 0.35) * 20) - (digital ? 0 : deliveryDays ?? 5);
     return [{ item: { ...item, trendSlug: event.slug }, score }];
   });
 
   scored.sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title));
-  return { event, items: scored.slice(0, Math.max(1, Math.min(100, limit))).map((entry) => entry.item) };
+  return { event, items: scored.slice(0, Math.max(1, Math.min(25, limit))).map((entry) => entry.item) };
 }
 
 export function includeSeasonalPulls(selected: SupplierItem[], shelf: ShelfItem[]) {
