@@ -13,6 +13,7 @@ const aliases: Record<string, string[]> = {
   fulfillmentType: ["fulfillment type", "fulfillment", "product type", "delivery type"],
   warehouseRegion: ["warehouse region", "warehouse", "ships from", "ship from", "stock region"],
   rightsCleared: ["rights cleared", "image rights", "licensed", "rights approved"],
+  trackedDelivery: ["tracked delivery", "tracked shipping", "tracking included", "trackable"],
 };
 
 function normalizeHeader(value: string) {
@@ -108,6 +109,7 @@ function rowsToItems(headers: string[], rows: string[][]) {
   const fulfillmentTypeIndex = columnIndex(headers, aliases.fulfillmentType);
   const warehouseRegionIndex = columnIndex(headers, aliases.warehouseRegion);
   const rightsClearedIndex = columnIndex(headers, aliases.rightsCleared);
+  const trackedDeliveryIndex = columnIndex(headers, aliases.trackedDelivery);
 
   if (skuIndex < 0 || titleIndex < 0 || (priceIndex < 0 && costIndex < 0)) {
     throw new Error("The feed needs a sku, a title, and a price or a cost. Column names are detected automatically.");
@@ -136,6 +138,7 @@ function rowsToItems(headers: string[], rows: string[][]) {
       fulfillmentType: fulfillmentTypeIndex >= 0 ? fulfillmentValue(row[fulfillmentTypeIndex]) : undefined,
       warehouseRegion: warehouseRegionIndex >= 0 ? row[warehouseRegionIndex]?.trim() : undefined,
       rightsCleared: rightsClearedIndex >= 0 ? booleanValue(row[rightsClearedIndex]) : false,
+      trackedDelivery: trackedDeliveryIndex >= 0 ? booleanValue(row[trackedDeliveryIndex]) : false,
     });
   }
 
