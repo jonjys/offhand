@@ -4,6 +4,7 @@ import { catalog } from "./catalog";
 import { parseFeed } from "./feed";
 import { accessStillGood, listingNote, mintShopifyToken, productInput, pushToShopify, shopDomain } from "./shopify";
 import { planSync, runUnattended } from "./sync";
+import { includeSeasonalPulls, selectTrendProducts, trendForDate } from "./trends";
 
 test("the machine lists a full shelf on its own, then pulls and reprices", () => {
   const first = runUnattended(catalog, 1);
@@ -173,4 +174,37 @@ test("a store without an online store channel is still listed in the admin", asy
   const result = await pushToShopify({ domain: "demo-shop.myshopify.com", token: "t", actions: [{ type: "list", sku: "BOSTON" }], supplier: catalog, shelf: [], fetchImpl });
   assert.equal(result.publicationId, null);
   assert.match(result.notes[0] ?? "", /Listed Birkenstock Boston/);
+});
+
+
+test("trend mode chooses Halloween products and fails closed on incomplete rows", () => {
+  const source = [
+    { sku: "PUMPKIN", title: "Ceramic pumpkin lantern", price: 40, cost: 18, stock: 8, deliveryDays: 5, imageUrl: "https://supplier.example/pumpkin.jpg", tags: ["Halloween"] },
+    { sku: "NO-IMAGE", title: "Ghost garland", price: 30, cost: 10, stock: 9, deliveryDays: 4, tags: ["Halloween"] },
+    { sku: "LOW-MARGIN", title: "Halloween candle", price: 20, cost: 16, stock: 5, deliveryDays: 4, imageUrl: "https://supplier.example/candle.jpg" },
+    { sku: "PLAIN", title: "Desk lamp", price: 60, cost: 20, stock: 5, deliveryDays: 4, imageUrl: "https://supplier.example/lamp.jpg" },
+  ];
+  const result = selectTrendProducts(source, new Date("2026-10-05T12:00:00Z"));
+  assert.equal(result.event?.slug, "halloween");
+  assert.deepEqual(result.items.map((item) => item.sku), ["PUMPKIN"]);
+  assert.equal(result.items[0]?.trendSlug, "halloween");
+});
+
+test("trend mode caps the shelf and pulls products from the previous event", () => {
+  const source = Array.from({ length: 120 }, (_, index) => ({
+    sku: `H-${index}`,
+    title: `Halloween pumpkin ${index}`,
+    price: 50,
+    cost: 20,
+    stock: 10,
+    deliveryDays: 3,
+    imageUrl: `https://supplier.example/${index}.jpg`,
+  }));
+  const selected = selectTrendProducts(source, new Date("2026-10-05T12:00:00Z"), 100);
+  assert.equal(selected.items.length, 100);
+  const managed = includeSeasonalPulls(selected.items, [
+    { sku: "OLD-XMAS", title: "Old Christmas item", price: 20, stock: 3, status: "active" },
+  ]);
+  assert.equal(managed.find((item) => item.sku === "OLD-XMAS")?.stock, 0);
+  assert.equal(trendForDate(new Date("2026-11-10T12:00:00Z"))?.slug, "christmas");
 });
