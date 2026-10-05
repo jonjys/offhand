@@ -105,7 +105,7 @@ export function selectTrendProducts(
       && euRegions.some((region) => item.warehouseRegion?.trim().toLowerCase() === region);
     const deliveryDays = item.deliveryDays;
     if (!digital && (!euWarehouse || deliveryDays === undefined || deliveryDays < 1 || deliveryDays > 5)) return [];
-    if (!digital && deliveryDays > daysToPeak) return [];
+    if (!digital && deliveryDays !== undefined && deliveryDays > daysToPeak) return [];
 
     const score = matches.length * 25 + Math.min(item.stock, 25) + Math.round((grossMargin ?? 0.35) * 20) - (digital ? 0 : deliveryDays ?? 5);
     return [{ item: { ...item, trendSlug: event.slug }, score }];
