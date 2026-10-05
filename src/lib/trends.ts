@@ -132,7 +132,10 @@ function haystack(item: SupplierItem) {
 
 function netMargin(item: SupplierItem) {
   if (
-    item.price <= 0 ||
+    !Number.isFinite(item.price) || item.price <= 0 ||
+    !Number.isFinite(item.cost) || (item.cost ?? -1) < 0 ||
+    !Number.isFinite(item.shippingCost) || (item.shippingCost ?? -1) < 0 ||
+    !Number.isFinite(item.feePercent) || (item.feePercent ?? -1) < 0 || (item.feePercent ?? 101) > 100 ||
     item.cost === undefined ||
     item.shippingCost === undefined ||
     item.feePercent === undefined
@@ -141,15 +144,12 @@ function netMargin(item: SupplierItem) {
   return { amount: net, ratio: net / item.price };
 }
 
-export function selectTrendProducts(
-  supplier: SupplierItem[],
-  now = new Date(),
-  limit = 100,
-) {
-  const event = trendForDate(now);
-  if (!event) return { event: null, items: [] as SupplierItem[] };
+export function productLimit(limit = 100) {
+  return Number.isFinite(limit) ? Math.max(0, Math.min(100, Math.floor(limit))) : 0;
+}
 
-  const daysToPeak = Math.max(0, Math.ceil((event.peakAt.getTime() - now.getTime()) / 86_400_000));
+/** Supplier evidence is required even when seasonal selection is disabled. */
+export function saleEligible(item: SupplierItem) {
   const protectedTerms = [
     "disney", "pixar", "marvel", "star wars", "harry potter", "pokemon", "barbie",
     "minecraft", "fortnite", "netflix", "stranger things", "wednesday addams",
@@ -161,12 +161,43 @@ export function selectTrendProducts(
     "spain", "italy", "denmark", "finland", "estonia", "latvia", "lithuania",
     "czechia", "austria", "belgium",
   ];
-  const scored = supplier.flatMap((item) => {
-    if (!item.sku.trim() || !item.title.trim() || item.price <= 0 || item.stock <= 0) return [];
-    if (!item.imageUrl || item.rightsCleared !== true || item.deliveryDays === undefined) return [];
+  if (!item.sku.trim() || !item.title.trim() || !Number.isInteger(item.stock) || item.stock <= 0) return false;
+  if (item.rightsCleared !== true || !Number.isFinite(item.deliveryDays)) return false;
+  try {
+    const image = new URL(item.imageUrl ?? "");
+    if (image.protocol !== "https:" || image.username || image.password) return false;
+  } catch { return false; }
+  if (protectedTerms.some((term) => haystack(item).includes(term))) return false;
+  const margin = netMargin(item);
+  if (!margin || !Number.isFinite(margin.amount) || margin.amount <= 0) return false;
+  if (item.fulfillmentType === "digital") return item.deliveryDays === 0;
+  return item.fulfillmentType === "physical"
+    && euRegions.includes(item.warehouseRegion?.trim().toLowerCase() ?? "")
+    && item.trackedDelivery === true
+    && (item.deliveryDays as number) >= 3 && (item.deliveryDays as number) <= 5;
+}
+
+function eligibleProducts(supplier: SupplierItem[]) {
+  const counts = new Map<string, number>();
+  for (const item of supplier) counts.set(item.sku, (counts.get(item.sku) ?? 0) + 1);
+  return supplier.filter((item) => counts.get(item.sku) === 1 && saleEligible(item));
+}
+
+export function selectSaleProducts(supplier: SupplierItem[], limit = 100) {
+  return eligibleProducts(supplier).slice(0, productLimit(limit));
+}
+
+export function selectTrendProducts(
+  supplier: SupplierItem[],
+  now = new Date(),
+  limit = 100,
+) {
+  const event = trendForDate(now);
+  if (!event) return { event: null, items: [] as SupplierItem[] };
+
+  const scored = eligibleProducts(supplier).flatMap((item) => {
 
     const text = haystack(item);
-    if (protectedTerms.some((term) => text.includes(term))) return [];
     if (event.requiresExplicitTag) {
       const tags = (item.tags ?? []).map((tag) => tag.trim().toLowerCase());
       if (!tags.some((tag) => tag === "día de muertos" || tag === "dia de muertos")) return [];
@@ -177,20 +208,15 @@ export function selectTrendProducts(
     const margin = netMargin(item);
     if (!margin || margin.amount <= 0) return [];
 
-    const digital = item.fulfillmentType === "digital";
-    const euWarehouse = item.fulfillmentType === "physical"
-      && euRegions.some((region) => item.warehouseRegion?.trim().toLowerCase() === region);
-    const deliveryDays = item.deliveryDays;
-    if (digital && deliveryDays !== 0) return [];
-    if (!digital && (!euWarehouse || item.trackedDelivery !== true || deliveryDays < 3 || deliveryDays > 5)) return [];
-    if (deliveryDays > daysToPeak) return [];
+    const deliveryDays = item.deliveryDays as number;
+    if (now.getTime() + deliveryDays * 86_400_000 > event.peakAt.getTime()) return [];
 
     const score = matches.length * 25 + Math.min(item.stock, 25) + Math.round(margin.ratio * 20) - deliveryDays;
     return [{ item: { ...item, trendSlug: event.slug }, score }];
   });
 
   scored.sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title));
-  return { event, items: scored.slice(0, Math.max(1, Math.min(100, limit))).map((entry) => entry.item) };
+  return { event, items: scored.slice(0, productLimit(limit)).map((entry) => entry.item) };
 }
 
 export function includeSeasonalPulls(selected: SupplierItem[], shelf: ShelfItem[]) {
@@ -200,3 +226,4 @@ export function includeSeasonalPulls(selected: SupplierItem[], shelf: ShelfItem[
     .map((item) => ({ sku: item.sku, title: item.title, price: item.price, stock: 0 }));
   return [...selected, ...pulls];
 }
+
