@@ -161,11 +161,14 @@ export function productInput(item: SupplierItem, locationId: string, shelf?: She
     title: item.title,
     descriptionHtml: listingNote(item),
     vendor: "Offhand",
-    tags: ["offhand"],
+    tags: item.trendSlug ? ["offhand", `trend:${item.trendSlug}`] : ["offhand"],
     status: status ?? (item.stock > 0 ? "ACTIVE" : "DRAFT"),
     productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
     variants: [variant],
   };
+  if (item.imageUrl && !shelf?.productId) {
+    input.files = [{ originalSource: item.imageUrl, alt: item.title, contentType: "IMAGE" }];
+  }
   if (shelf?.productId) input.id = shelf.productId;
   return input;
 }
