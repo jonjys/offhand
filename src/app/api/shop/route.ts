@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       tokenExpiresAt: minted?.expiresAt,
       feedUrl,
       trendMode: Boolean(body.trendMode),
-      maxProducts: Math.max(1, Math.min(100, Math.floor(body.maxProducts ?? 100))),
+      maxProducts: Math.max(1, Math.min(25, Math.floor(body.maxProducts ?? 25))),
       until: access.until,
       locationId: existing?.locationId,
       publicationId: existing?.domain === domain ? existing.publicationId : undefined,
