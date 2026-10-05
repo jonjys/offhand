@@ -26,9 +26,7 @@ const LOCATIONS = `query OffhandLocations {
 
 const SHOP_POLICIES = `query OffhandShopPolicies {
   shop {
-    privacyPolicy { id }
-    refundPolicy { id }
-    shippingPolicy { id }
+    shopPolicies { id type body }
   }
 }`;
 
@@ -143,16 +141,15 @@ export function createShopifyClient(domain: string, token: string, fetchImpl: ty
 export async function shopPolicyReadiness(domain: string, token: string, fetchImpl: typeof fetch = fetch) {
   const graphql = createShopifyClient(domain, token, fetchImpl);
   const data = await graphql<{
-    shop: {
-      privacyPolicy: { id: string } | null;
-      refundPolicy: { id: string } | null;
-      shippingPolicy: { id: string } | null;
-    };
+    shop: { shopPolicies: { id: string; type: string; body: string }[] };
   }>(SHOP_POLICIES, {});
+  const present = new Set(
+    data.shop.shopPolicies.filter((policy) => policy.body.trim().length > 0).map((policy) => policy.type),
+  );
   const missing = [
-    !data.shop.privacyPolicy && "privacy policy",
-    !data.shop.refundPolicy && "refund/returns policy",
-    !data.shop.shippingPolicy && "shipping policy",
+    !present.has("PRIVACY_POLICY") && "privacy policy",
+    !present.has("REFUND_POLICY") && "refund/returns policy",
+    !present.has("SHIPPING_POLICY") && "shipping policy",
   ].filter(Boolean) as string[];
   return { ready: missing.length === 0, missing };
 }
