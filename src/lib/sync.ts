@@ -8,6 +8,9 @@ export type SupplierItem = {
   cost?: number;
   deliveryDays?: number;
   imageUrl?: string;
+  fulfillmentType?: "digital" | "physical";
+  warehouseRegion?: string;
+  rightsCleared?: boolean;
   trendSlug?: string;
 };
 
