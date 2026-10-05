@@ -4,6 +4,11 @@ export type SupplierItem = {
   price: number;
   stock: number;
   description?: string;
+  tags?: string[];
+  cost?: number;
+  deliveryDays?: number;
+  imageUrl?: string;
+  trendSlug?: string;
 };
 
 export type ShelfItem = {
