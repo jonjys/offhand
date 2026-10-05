@@ -53,7 +53,7 @@ export async function POST(request: Request) {
 
     const domain = shopDomain(body.domain);
     const feedUrl = body.feedUrl?.trim() ?? "";
-    if (feedUrl && !isPublicFeedUrl(feedUrl)) {
+    if (!feedUrl || !isPublicFeedUrl(feedUrl)) {
       return Response.json({ error: "The feed URL has to be a public https link." }, { status: 400 });
     }
 
@@ -89,3 +89,4 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 400 });
   }
 }
+
