@@ -89,6 +89,7 @@ export function selectTrendProducts(
   const protectedTerms = [
     "disney", "pixar", "marvel", "star wars", "harry potter", "pokemon", "barbie",
     "minecraft", "fortnite", "netflix", "stranger things", "wednesday addams",
+    "official", "celebrity", "famous actor", "famous singer", "movie character", "film character", "tv character",
   ];
   const euRegions = ["eu", "european union", "sweden", "germany", "poland", "netherlands", "france", "spain", "italy", "denmark", "finland", "estonia", "latvia", "lithuania", "czechia", "austria", "belgium"];
   const scored = supplier.flatMap((item) => {
@@ -104,7 +105,7 @@ export function selectTrendProducts(
     const euWarehouse = item.fulfillmentType === "physical"
       && euRegions.some((region) => item.warehouseRegion?.trim().toLowerCase() === region);
     const deliveryDays = item.deliveryDays;
-    if (!digital && (!euWarehouse || deliveryDays === undefined || deliveryDays < 1 || deliveryDays > 5)) return [];
+    if (!digital && (!euWarehouse || deliveryDays === undefined || deliveryDays < 3 || deliveryDays > 5)) return [];
     if (!digital && deliveryDays !== undefined && deliveryDays > daysToPeak) return [];
 
     const score = matches.length * 25 + Math.min(item.stock, 25) + Math.round((grossMargin ?? 0.35) * 20) - (digital ? 0 : deliveryDays ?? 5);
