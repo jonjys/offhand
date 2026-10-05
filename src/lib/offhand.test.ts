@@ -179,10 +179,10 @@ test("a store without an online store channel is still listed in the admin", asy
 
 test("trend mode chooses Halloween products and fails closed on incomplete rows", () => {
   const source = [
-    { sku: "PUMPKIN", title: "Ceramic pumpkin lantern", price: 40, cost: 18, stock: 8, deliveryDays: 5, imageUrl: "https://supplier.example/pumpkin.jpg", tags: ["Halloween"], fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
-    { sku: "NO-IMAGE", title: "Ghost garland", price: 30, cost: 10, stock: 9, deliveryDays: 4, tags: ["Halloween"], fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
-    { sku: "LOW-MARGIN", title: "Halloween candle", price: 20, cost: 16, stock: 5, deliveryDays: 4, imageUrl: "https://supplier.example/candle.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
-    { sku: "PLAIN", title: "Desk lamp", price: 60, cost: 20, stock: 5, deliveryDays: 4, imageUrl: "https://supplier.example/lamp.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
+    { sku: "PUMPKIN", title: "Ceramic pumpkin lantern", price: 40, cost: 18, shippingCost: 4, feePercent: 3, stock: 8, deliveryDays: 5, imageUrl: "https://supplier.example/pumpkin.jpg", tags: ["Halloween"], fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
+    { sku: "NO-IMAGE", title: "Ghost garland", price: 30, cost: 10, shippingCost: 3, feePercent: 3, stock: 9, deliveryDays: 4, tags: ["Halloween"], fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
+    { sku: "LOW-MARGIN", title: "Halloween candle", price: 20, cost: 16, shippingCost: 4, feePercent: 5, stock: 5, deliveryDays: 4, imageUrl: "https://supplier.example/candle.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
+    { sku: "PLAIN", title: "Desk lamp", price: 60, cost: 20, shippingCost: 4, feePercent: 3, stock: 5, deliveryDays: 4, imageUrl: "https://supplier.example/lamp.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
   ];
   const result = selectTrendProducts(source, new Date("2026-10-05T12:00:00Z"));
   assert.equal(result.event?.slug, "halloween");
@@ -196,14 +196,16 @@ test("trend mode caps the shelf and pulls products from the previous event", () 
     title: `Halloween pumpkin ${index}`,
     price: 50,
     cost: 20,
+    shippingCost: 0,
+    feePercent: 3,
     stock: 10,
-    deliveryDays: 3,
+    deliveryDays: 0,
     imageUrl: `https://supplier.example/${index}.jpg`,
     fulfillmentType: "digital" as const,
     rightsCleared: true,
   }));
   const selected = selectTrendProducts(source, new Date("2026-10-05T12:00:00Z"), 100);
-  assert.equal(selected.items.length, 25);
+  assert.equal(selected.items.length, 100);
   const managed = includeSeasonalPulls(selected.items, [
     { sku: "OLD-XMAS", title: "Old Christmas item", price: 20, stock: 3, status: "active" },
   ]);
@@ -214,21 +216,40 @@ test("trend mode caps the shelf and pulls products from the previous event", () 
 
 test("trend mode accepts instant downloads and rejects unsafe physical or protected-character products", () => {
   const source = [
-    { sku: "DIGITAL", title: "Printable Halloween door sign", price: 12, cost: 2, stock: 999, imageUrl: "https://supplier.example/sign.jpg", tags: ["Halloween"], fulfillmentType: "digital" as const, rightsCleared: true },
-    { sku: "SLOW", title: "Halloween pumpkin bowl", price: 40, cost: 10, stock: 8, deliveryDays: 8, imageUrl: "https://supplier.example/bowl.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
-    { sku: "US", title: "Halloween ghost banner", price: 40, cost: 10, stock: 8, deliveryDays: 4, imageUrl: "https://supplier.example/ghost.jpg", fulfillmentType: "physical" as const, warehouseRegion: "US", rightsCleared: true, trackedDelivery: true },
-    { sku: "IP", title: "Disney Halloween printable", price: 12, cost: 2, stock: 99, imageUrl: "https://supplier.example/ip.jpg", fulfillmentType: "digital" as const, rightsCleared: true },
-    { sku: "NO-RIGHTS", title: "Printable Halloween place cards", price: 12, cost: 2, stock: 99, imageUrl: "https://supplier.example/cards.jpg", fulfillmentType: "digital" as const },
+    { sku: "DIGITAL", title: "Printable Halloween door sign", price: 12, cost: 2, shippingCost: 0, feePercent: 3, deliveryDays: 0, stock: 999, imageUrl: "https://supplier.example/sign.jpg", tags: ["Halloween"], fulfillmentType: "digital" as const, rightsCleared: true },
+    { sku: "SLOW", title: "Halloween pumpkin bowl", price: 40, cost: 10, shippingCost: 3, feePercent: 3, stock: 8, deliveryDays: 8, imageUrl: "https://supplier.example/bowl.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true },
+    { sku: "US", title: "Halloween ghost banner", price: 40, cost: 10, shippingCost: 3, feePercent: 3, stock: 8, deliveryDays: 4, imageUrl: "https://supplier.example/ghost.jpg", fulfillmentType: "physical" as const, warehouseRegion: "US", rightsCleared: true, trackedDelivery: true },
+    { sku: "IP", title: "Disney Halloween printable", price: 12, cost: 2, shippingCost: 0, feePercent: 3, deliveryDays: 0, stock: 99, imageUrl: "https://supplier.example/ip.jpg", fulfillmentType: "digital" as const, rightsCleared: true },
+    { sku: "NO-RIGHTS", title: "Printable Halloween place cards", price: 12, cost: 2, shippingCost: 0, feePercent: 3, deliveryDays: 0, stock: 99, imageUrl: "https://supplier.example/cards.jpg", fulfillmentType: "digital" as const },
   ];
   const result = selectTrendProducts(source, new Date("2026-10-05T12:00:00Z"));
   assert.deepEqual(result.items.map((item) => item.sku), ["DIGITAL"]);
 });
 
 test("feed reads fulfillment and rights evidence explicitly", () => {
-  const [item] = parseFeed("sku,title,price,stock,image url,fulfillment type,warehouse region,delivery days,tracked delivery,rights cleared,tags\nH1,Halloween banner,20,4,https://supplier.example/h1.jpg,physical,EU,4,yes,yes,Halloween\n");
+  const [item] = parseFeed("sku,title,price,cost,shipping cost,fee percent,stock,image url,fulfillment type,warehouse region,delivery days,tracked delivery,rights cleared,tags\nH1,Halloween banner,20,8,3,3,4,https://supplier.example/h1.jpg,physical,EU,4,yes,yes,Halloween\n");
   assert.equal(item.fulfillmentType, "physical");
   assert.equal(item.warehouseRegion, "EU");
   assert.equal(item.deliveryDays, 4);
   assert.equal(item.rightsCleared, true);
   assert.equal(item.trackedDelivery, true);
+  assert.equal(item.shippingCost, 3);
+  assert.equal(item.feePercent, 3);
+});
+
+
+test("Día de Muertos requires the supplier's explicit event tag", () => {
+  const common = { price: 30, cost: 8, shippingCost: 0, feePercent: 3, stock: 99, deliveryDays: 0, imageUrl: "https://supplier.example/dia.jpg", fulfillmentType: "digital" as const, rightsCleared: true };
+  const result = selectTrendProducts([
+    { ...common, sku: "EXPLICIT", title: "Printable ofrenda cards", tags: ["Día de Muertos"] },
+    { ...common, sku: "INFERRED", title: "Printable calavera cards", tags: ["calavera"] },
+  ], new Date("2026-11-01T12:00:00Z"));
+  assert.equal(result.event?.slug, "dia-de-muertos");
+  assert.deepEqual(result.items.map((item) => item.sku), ["EXPLICIT"]);
+});
+
+test("Black Friday is a pricing period", () => {
+  const event = trendForDate(new Date("2026-11-27T12:00:00Z"));
+  assert.equal(event?.slug, "black-friday-cyber-week");
+  assert.equal(event?.kind, "pricing");
 });
