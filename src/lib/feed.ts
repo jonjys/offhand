@@ -5,6 +5,8 @@ const aliases: Record<string, string[]> = {
   title: ["title", "name", "product", "product name", "item name"],
   price: ["price", "retail", "sell price", "msrp", "asking"],
   cost: ["cost", "wholesale", "unit cost", "your cost"],
+  shippingCost: ["shipping cost", "freight cost", "delivery cost", "postage cost"],
+  feePercent: ["fee percent", "platform fee percent", "transaction fee percent", "fee %"],
   stock: ["stock", "qty", "quantity", "inventory", "on hand", "available", "count"],
   description: ["description", "body", "details"],
   tags: ["tags", "keywords", "category", "categories"],
@@ -50,6 +52,12 @@ function fulfillmentValue(value: string | undefined) {
   if (normalized === "digital" || normalized === "download" || normalized === "printable") return "digital" as const;
   if (normalized === "physical") return "physical" as const;
   return undefined;
+}
+
+function nonNegativeNumber(value: string | undefined) {
+  if (value === undefined || value.trim() === "") return undefined;
+  const number = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
 function stockValue(value: string | undefined) {
@@ -101,6 +109,8 @@ function rowsToItems(headers: string[], rows: string[][]) {
   const titleIndex = columnIndex(headers, aliases.title);
   const priceIndex = columnIndex(headers, aliases.price);
   const costIndex = columnIndex(headers, aliases.cost);
+  const shippingCostIndex = columnIndex(headers, aliases.shippingCost);
+  const feePercentIndex = columnIndex(headers, aliases.feePercent);
   const stockIndex = columnIndex(headers, aliases.stock);
   const descriptionIndex = columnIndex(headers, aliases.description);
   const tagsIndex = columnIndex(headers, aliases.tags);
@@ -133,6 +143,8 @@ function rowsToItems(headers: string[], rows: string[][]) {
       description: descriptionIndex >= 0 ? row[descriptionIndex]?.trim() : undefined,
       tags: tagsIndex >= 0 ? (row[tagsIndex] ?? "").split(/[|;,]/).map((tag) => tag.trim()).filter(Boolean) : undefined,
       cost: cost ?? undefined,
+      shippingCost: shippingCostIndex >= 0 ? nonNegativeNumber(row[shippingCostIndex]) : undefined,
+      feePercent: feePercentIndex >= 0 ? nonNegativeNumber(row[feePercentIndex]) : undefined,
       deliveryDays,
       imageUrl: imageUrl?.startsWith("https://") ? imageUrl : undefined,
       fulfillmentType: fulfillmentTypeIndex >= 0 ? fulfillmentValue(row[fulfillmentTypeIndex]) : undefined,
