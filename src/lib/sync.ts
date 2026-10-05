@@ -6,6 +6,8 @@ export type SupplierItem = {
   description?: string;
   tags?: string[];
   cost?: number;
+  shippingCost?: number;
+  feePercent?: number;
   deliveryDays?: number;
   imageUrl?: string;
   fulfillmentType?: "digital" | "physical";
