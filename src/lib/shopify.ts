@@ -24,6 +24,14 @@ const LOCATIONS = `query OffhandLocations {
   }
 }`;
 
+const SHOP_POLICIES = `query OffhandShopPolicies {
+  shop {
+    privacyPolicy { id }
+    refundPolicy { id }
+    shippingPolicy { id }
+  }
+}`;
+
 const ONLINE_STORE = `query OffhandPublications {
   publications(first: 10) {
     nodes { id name }
@@ -130,6 +138,23 @@ export function createShopifyClient(domain: string, token: string, fetchImpl: ty
     }
     return payload.data as T;
   };
+}
+
+export async function shopPolicyReadiness(domain: string, token: string, fetchImpl: typeof fetch = fetch) {
+  const graphql = createShopifyClient(domain, token, fetchImpl);
+  const data = await graphql<{
+    shop: {
+      privacyPolicy: { id: string } | null;
+      refundPolicy: { id: string } | null;
+      shippingPolicy: { id: string } | null;
+    };
+  }>(SHOP_POLICIES, {});
+  const missing = [
+    !data.shop.privacyPolicy && "privacy policy",
+    !data.shop.refundPolicy && "refund/returns policy",
+    !data.shop.shippingPolicy && "shipping policy",
+  ].filter(Boolean) as string[];
+  return { ready: missing.length === 0, missing };
 }
 
 function shopNote(action: Action, item: SupplierItem, domain: string) {
