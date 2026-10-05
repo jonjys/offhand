@@ -105,7 +105,7 @@ export function selectTrendProducts(
     const euWarehouse = item.fulfillmentType === "physical"
       && euRegions.some((region) => item.warehouseRegion?.trim().toLowerCase() === region);
     const deliveryDays = item.deliveryDays;
-    if (!digital && (!euWarehouse || deliveryDays === undefined || deliveryDays < 3 || deliveryDays > 5)) return [];
+    if (!digital && (!euWarehouse || item.trackedDelivery !== true || deliveryDays === undefined || deliveryDays < 3 || deliveryDays > 5)) return [];
     if (!digital && deliveryDays !== undefined && deliveryDays > daysToPeak) return [];
 
     const score = matches.length * 25 + Math.min(item.stock, 25) + Math.round((grossMargin ?? 0.35) * 20) - (digital ? 0 : deliveryDays ?? 5);
