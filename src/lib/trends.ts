@@ -41,7 +41,7 @@ function addDays(date: Date, days: number) {
 function blackFriday(year: number) {
   const thanksgiving = utc(year, 11, 1);
   const firstThursdayOffset = (4 - thanksgiving.getUTCDay() + 7) % 7;
-  return addDays(thanksgiving, firstThursdayOffset + 22 + 1);
+  return addDays(thanksgiving, firstThursdayOffset + 22);
 }
 
 function eventsForYear(year: number): TrendEvent[] {
