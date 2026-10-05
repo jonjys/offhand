@@ -1,6 +1,6 @@
 import { catalog } from "@/lib/catalog";
 import { isPublicFeedUrl, parseFeed } from "@/lib/feed";
-import { ensureShopifyAccess, pushToShopify } from "@/lib/shopify";
+import { ensureShopifyAccess, pushToShopify, shopPolicyReadiness } from "@/lib/shopify";
 import { readShops, writeShops, type LogLine, type ShopRecord } from "@/lib/shop-store";
 import { applyPlan, describe, drift, planSync, type ShelfItem, type SupplierItem } from "@/lib/sync";
 import { includeSeasonalPulls, selectTrendProducts } from "@/lib/trends";
@@ -107,7 +107,13 @@ async function advanceShop(machine: Machine, shop: ShopRecord) {
     }
   }
   if (shop.trendMode) {
-    const selection = selectTrendProducts(supplier, new Date(), shop.maxProducts ?? 100);
+    const policies = await shopPolicyReadiness(shop.domain, shop.token);
+    if (!policies.ready) {
+      const note = `Publishing blocked: add ${policies.missing.join(", ")} in Shopify.`;
+      if (shop.log[0]?.text !== note) shop.log = [stamp(note), ...shop.log].slice(0, 30);
+      return;
+    }
+    const selection = selectTrendProducts(supplier, new Date(), shop.maxProducts ?? 25);
     supplier = includeSeasonalPulls(selection.items, shop.shelf);
     shop.supplier = selection.items;
     if (selection.event) {
@@ -177,7 +183,7 @@ export function publicShop(shop: ShopRecord) {
     domain: shop.domain,
     feedUrl: shop.feedUrl,
     trendMode: Boolean(shop.trendMode),
-    maxProducts: shop.maxProducts ?? 100,
+    maxProducts: shop.maxProducts ?? 25,
     until: shop.until,
     shelf: shop.shelf,
     log: shop.log,
