@@ -10,6 +10,9 @@ const aliases: Record<string, string[]> = {
   tags: ["tags", "keywords", "category", "categories"],
   deliveryDays: ["delivery days", "shipping days", "lead time", "lead time days"],
   imageUrl: ["image url", "image", "photo url", "main image"],
+  fulfillmentType: ["fulfillment type", "fulfillment", "product type", "delivery type"],
+  warehouseRegion: ["warehouse region", "warehouse", "ships from", "ship from", "stock region"],
+  rightsCleared: ["rights cleared", "image rights", "licensed", "rights approved"],
 };
 
 function normalizeHeader(value: string) {
@@ -34,6 +37,18 @@ function moneyValue(value: string | undefined) {
   const number = Number(value.replace(/[^0-9.]/g, ""));
   if (!Number.isFinite(number) || number <= 0) return null;
   return Math.round(number);
+}
+
+function booleanValue(value: string | undefined) {
+  if (!value) return false;
+  return ["1", "true", "yes", "y", "approved", "cleared"].includes(value.trim().toLowerCase());
+}
+
+function fulfillmentValue(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "digital" || normalized === "download" || normalized === "printable") return "digital" as const;
+  if (normalized === "physical") return "physical" as const;
+  return undefined;
 }
 
 function stockValue(value: string | undefined) {
@@ -90,6 +105,9 @@ function rowsToItems(headers: string[], rows: string[][]) {
   const tagsIndex = columnIndex(headers, aliases.tags);
   const deliveryDaysIndex = columnIndex(headers, aliases.deliveryDays);
   const imageUrlIndex = columnIndex(headers, aliases.imageUrl);
+  const fulfillmentTypeIndex = columnIndex(headers, aliases.fulfillmentType);
+  const warehouseRegionIndex = columnIndex(headers, aliases.warehouseRegion);
+  const rightsClearedIndex = columnIndex(headers, aliases.rightsCleared);
 
   if (skuIndex < 0 || titleIndex < 0 || (priceIndex < 0 && costIndex < 0)) {
     throw new Error("The feed needs a sku, a title, and a price or a cost. Column names are detected automatically.");
@@ -115,6 +133,9 @@ function rowsToItems(headers: string[], rows: string[][]) {
       cost: cost ?? undefined,
       deliveryDays,
       imageUrl: imageUrl?.startsWith("https://") ? imageUrl : undefined,
+      fulfillmentType: fulfillmentTypeIndex >= 0 ? fulfillmentValue(row[fulfillmentTypeIndex]) : undefined,
+      warehouseRegion: warehouseRegionIndex >= 0 ? row[warehouseRegionIndex]?.trim() : undefined,
+      rightsCleared: rightsClearedIndex >= 0 ? booleanValue(row[rightsClearedIndex]) : false,
     });
   }
 
