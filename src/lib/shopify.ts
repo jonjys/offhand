@@ -1,9 +1,10 @@
+import { selectSaleProducts } from "@/lib/trends";
 import { money, type Action, type ShelfItem, type SupplierItem } from "@/lib/sync";
 
 const API_VERSION = "2026-10";
 
-const PRODUCT_SET = `mutation OffhandProductSet($input: ProductSetInput!) {
-  productSet(synchronous: true, input: $input) {
+const PRODUCT_SET = `mutation OffhandProductSet($input: ProductSetInput!, $identifier: ProductSetIdentifiers) {
+  productSet(synchronous: true, input: $input, identifier: $identifier) {
     product {
       id
       status
@@ -18,6 +19,13 @@ const PRODUCT_SET = `mutation OffhandProductSet($input: ProductSetInput!) {
   }
 }`;
 
+const DRAFT_PRODUCT = `mutation OffhandDraftProduct($product: ProductUpdateInput!) {
+  productUpdate(product: $product) {
+    product { id status }
+    userErrors { field message }
+  }
+}`;
+
 const LOCATIONS = `query OffhandLocations {
   locations(first: 1) {
     nodes { id }
@@ -26,7 +34,7 @@ const LOCATIONS = `query OffhandLocations {
 
 const SHOP_POLICIES = `query OffhandShopPolicies {
   shop {
-    shopPolicies { id type body }
+    shopPolicies { id type body url }
   }
 }`;
 
@@ -141,15 +149,17 @@ export function createShopifyClient(domain: string, token: string, fetchImpl: ty
 export async function shopPolicyReadiness(domain: string, token: string, fetchImpl: typeof fetch = fetch) {
   const graphql = createShopifyClient(domain, token, fetchImpl);
   const data = await graphql<{
-    shop: { shopPolicies: { id: string; type: string; body: string }[] };
+    shop: { shopPolicies: { id: string; type: string; body: string; url: string }[] };
   }>(SHOP_POLICIES, {});
   const present = new Set(
-    data.shop.shopPolicies.filter((policy) => policy.body.trim().length > 0).map((policy) => policy.type),
+    data.shop.shopPolicies.filter((policy) => policy.body.trim().length > 0 && policy.url?.startsWith("https://")).map((policy) => policy.type),
   );
   const missing = [
     !present.has("PRIVACY_POLICY") && "privacy policy",
     !present.has("REFUND_POLICY") && "refund/returns policy",
     !present.has("SHIPPING_POLICY") && "shipping policy",
+    !present.has("TERMS_OF_SERVICE") && "terms of service",
+    !present.has("CONTACT_INFORMATION") && "contact information",
   ].filter(Boolean) as string[];
   return { ready: missing.length === 0, missing };
 }
@@ -173,6 +183,7 @@ export function productInput(item: SupplierItem, locationId: string, shelf?: She
   const variant: Record<string, unknown> = {
     optionValues: [{ optionName: "Title", name: "Default Title" }],
     sku: item.sku,
+    inventoryPolicy: "DENY",
     price: item.price,
     inventoryItem: { tracked: true, sku: item.sku },
     inventoryQuantities: [{ locationId, name: "available", quantity: Math.max(0, item.stock) }],
@@ -191,7 +202,6 @@ export function productInput(item: SupplierItem, locationId: string, shelf?: She
   if (item.imageUrl && !shelf?.productId) {
     input.files = [{ originalSource: item.imageUrl, alt: item.title, contentType: "IMAGE" }];
   }
-  if (shelf?.productId) input.id = shelf.productId;
   return input;
 }
 
@@ -245,33 +255,63 @@ export async function pushToShopify(input: {
   let resolvedLocation = input.locationId;
   let resolvedPublication = input.publicationId;
 
-  for (const action of input.actions) {
+  let policiesReady = false;
+  try {
+    const policies = await shopPolicyReadiness(input.domain, input.token, input.fetchImpl);
+    policiesReady = policies.ready;
+    if (!policiesReady) notes.push(`Publishing blocked: add ${policies.missing.join(", ")} in Shopify.`);
+  } catch {
+    notes.push("Publishing blocked: Shopify policies could not be verified.");
+  }
+  const eligible = new Set((policiesReady ? selectSaleProducts(input.supplier) : []).map((item) => item.sku));
+  const forcedPulls: Action[] = shelf.filter((item) => item.status === "active" && !eligible.has(item.sku))
+    .map((item) => ({ type: "pull", sku: item.sku }));
+  for (const current of shelf) {
+    if (!source.has(current.sku)) source.set(current.sku, { ...current, stock: 0 });
+  }
+  const actions = [...forcedPulls, ...input.actions.filter((action) =>
+    action.type === "pull" ? !forcedPulls.some((pull) => pull.sku === action.sku) : eligible.has(action.sku))];
+  let withdrawalFailed = false;
+
+  for (const action of actions) {
+    if (withdrawalFailed && action.type !== "pull") continue;
     const item = source.get(action.sku);
     if (!item) continue;
     const current = bySku.get(action.sku);
     try {
+      if (action.type === "pull") {
+        if (!current?.productId) throw new Error("The managed product ID is missing; withdrawal cannot be verified.");
+        const draft = await graphql<{ productUpdate: { product: { id: string; status: string } | null; userErrors: { message: string }[] } }>(DRAFT_PRODUCT,
+          { product: { id: current.productId, status: "DRAFT" } });
+        if (draft.productUpdate.userErrors.length || draft.productUpdate.product?.status !== "DRAFT") throw new Error("Shopify did not confirm withdrawal.");
+        bySku.set(current.sku, { ...current, status: "draft", stock: 0, published: false });
+        notes.push(shopNote(action, item, input.domain));
+        continue;
+      }
       resolvedLocation = await locationId(graphql, resolvedLocation);
-      const status = action.type === "pull" ? "DRAFT" : "ACTIVE";
-      const stockItem = action.type === "pull" ? { ...item, stock: 0 } : item;
+      const status = "ACTIVE";
+      const stockItem = item;
       const data = await graphql<{
         productSet: {
           product: { id: string; variants: { nodes: { id: string; inventoryItem: { id: string } | null }[] } } | null;
           userErrors: { message: string }[];
         };
-      }>(PRODUCT_SET, { input: productInput(stockItem, resolvedLocation, current, status) });
+      }>(PRODUCT_SET, { input: productInput(stockItem, resolvedLocation, current, status),
+        identifier: current?.productId ? { id: current.productId } : null });
 
       if (data.productSet.userErrors.length) {
         throw new Error(data.productSet.userErrors.map((error) => error.message).join(" "));
       }
 
       const product = data.productSet.product;
+      if (!product) throw new Error("Shopify did not confirm the product update.");
       const variant = product?.variants.nodes[0];
       const next: ShelfItem = {
         sku: item.sku,
         title: item.title,
-        price: action.type === "pull" ? (current?.price ?? item.price) : item.price,
-        stock: action.type === "pull" ? 0 : item.stock,
-        status: action.type === "pull" ? "draft" : "active",
+        price: item.price,
+        stock: item.stock,
+        status: "active",
         productId: product?.id ?? current?.productId,
         variantId: variant?.id ?? current?.variantId,
         inventoryItemId: variant?.inventoryItem?.id ?? current?.inventoryItemId,
@@ -310,6 +350,7 @@ export async function pushToShopify(input: {
 
       notes.push(shopNote(action, item, input.domain));
     } catch (error) {
+      if (action.type === "pull") withdrawalFailed = true;
       notes.push(`${item.title} stayed put. ${error instanceof Error ? error.message : "Shopify refused the update."}`);
     }
   }
@@ -317,7 +358,7 @@ export async function pushToShopify(input: {
   // Listings made before Offhand published to the channel, or on a store
   // whose channel appeared later, are put on it now. A handful per run keeps
   // the daily sync cheap; the rest follow the next day.
-  const unpublished = [...bySku.values()].filter((item) => item.status === "active" && item.productId && !item.published);
+  const unpublished = [...bySku.values()].filter((item) => !withdrawalFailed && eligible.has(item.sku) && item.status === "active" && item.productId && !item.published);
   for (const item of unpublished.slice(0, 10)) {
     try {
       resolvedPublication = await onlineStoreId(graphql, resolvedPublication);
@@ -332,3 +373,4 @@ export async function pushToShopify(input: {
 
   return { shelf: [...bySku.values()], notes, locationId: resolvedLocation, publicationId: resolvedPublication };
 }
+
