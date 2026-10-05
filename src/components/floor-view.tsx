@@ -22,6 +22,8 @@ export type FloorSnapshot = {
 type ShopState = {
   domain: string;
   feedUrl: string;
+  trendMode?: boolean;
+  maxProducts?: number;
   until: string;
   shelf: Row[];
   log: Line[];
@@ -93,6 +95,8 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [feedUrl, setFeedUrl] = useState("");
+  const [trendMode, setTrendMode] = useState(true);
+  const [maxProducts, setMaxProducts] = useState(100);
   const [busy, setBusy] = useState<"pay" | "connect" | null>(null);
   const [error, setError] = useState(cancelled ? "Checkout was cancelled. The floor kept running." : "");
 
@@ -161,7 +165,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
       const response = await fetch("/api/shop", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token, domain, clientId, clientSecret, feedUrl }),
+        body: JSON.stringify({ token, domain, clientId, clientSecret, feedUrl, trendMode, maxProducts }),
       });
       const data = (await response.json()) as { shop?: ShopState; error?: string };
       if (!response.ok || !data.shop) {
@@ -283,6 +287,32 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
             <p className="text-xs leading-5 text-muted-foreground">
               Offhand keeps the Client ID and Client secret on the server and asks Shopify for a fresh token before the old one expires.
             </p>
+            <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-[1fr_12rem] sm:items-end">
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={trendMode}
+                  onChange={(event) => setTrendMode(event.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  <strong className="block">Follow the retail calendar</strong>
+                  <span className="text-muted-foreground">Requires store policies, positive margin after shipping and fees, cleared image rights, and delivery before the use date.</span>
+                </span>
+              </label>
+              <label className="grid gap-2 text-sm" htmlFor="max-products">
+                Maximum active products
+                <input
+                  id="max-products"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={maxProducts}
+                  onChange={(event) => setMaxProducts(Number(event.target.value))}
+                  className="h-11 rounded-lg border border-border bg-background px-3"
+                />
+              </label>
+            </div>
             <Button type="submit" className="h-11 w-fit px-4" disabled={busy !== null}>
               {busy === "connect" ? <Loader2 className="animate-spin" /> : null}
               Leave it running
@@ -295,7 +325,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
             <header className="flex items-baseline justify-between gap-3">
               <h2 className="font-[family-name:var(--font-fraunces)] text-2xl tracking-tight">{shop.domain}</h2>
               <p className="text-xs text-muted-foreground">
-                {shop.listed} listed · {shop.pulled} pulled · {shop.feedUrl ? "your feed" : "this catalog"}
+                {shop.listed} listed · {shop.pulled} pulled · {shop.trendMode ? `trend mode, max ${shop.maxProducts ?? 100}` : shop.feedUrl ? "your feed" : "this catalog"}
               </p>
             </header>
             <Tape log={shop.log} />

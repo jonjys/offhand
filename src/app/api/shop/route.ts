@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     clientSecret?: string;
     adminToken?: string;
     feedUrl?: string;
+    trendMode?: boolean;
+    maxProducts?: number;
   } | null;
   const clientId = body?.clientId?.trim() ?? "";
   const clientSecret = body?.clientSecret?.trim() ?? "";
@@ -72,6 +74,8 @@ export async function POST(request: Request) {
       clientSecret: clientSecret || undefined,
       tokenExpiresAt: minted?.expiresAt,
       feedUrl,
+      trendMode: Boolean(body.trendMode),
+      maxProducts: Math.max(1, Math.min(100, Math.floor(body.maxProducts ?? 100))),
       until: access.until,
       locationId: existing?.locationId,
       publicationId: existing?.domain === domain ? existing.publicationId : undefined,

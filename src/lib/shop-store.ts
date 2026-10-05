@@ -10,6 +10,8 @@ export type ShopRecord = {
   domain: string;
   token: string;
   feedUrl: string;
+  trendMode?: boolean;
+  maxProducts?: number;
   until: string;
   clientId?: string;
   clientSecret?: string;

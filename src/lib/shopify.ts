@@ -24,6 +24,12 @@ const LOCATIONS = `query OffhandLocations {
   }
 }`;
 
+const SHOP_POLICIES = `query OffhandShopPolicies {
+  shop {
+    shopPolicies { id type body }
+  }
+}`;
+
 const ONLINE_STORE = `query OffhandPublications {
   publications(first: 10) {
     nodes { id name }
@@ -132,6 +138,22 @@ export function createShopifyClient(domain: string, token: string, fetchImpl: ty
   };
 }
 
+export async function shopPolicyReadiness(domain: string, token: string, fetchImpl: typeof fetch = fetch) {
+  const graphql = createShopifyClient(domain, token, fetchImpl);
+  const data = await graphql<{
+    shop: { shopPolicies: { id: string; type: string; body: string }[] };
+  }>(SHOP_POLICIES, {});
+  const present = new Set(
+    data.shop.shopPolicies.filter((policy) => policy.body.trim().length > 0).map((policy) => policy.type),
+  );
+  const missing = [
+    !present.has("PRIVACY_POLICY") && "privacy policy",
+    !present.has("REFUND_POLICY") && "refund/returns policy",
+    !present.has("SHIPPING_POLICY") && "shipping policy",
+  ].filter(Boolean) as string[];
+  return { ready: missing.length === 0, missing };
+}
+
 function shopNote(action: Action, item: SupplierItem, domain: string) {
   if (action.type === "list") return `Listed ${item.title} on ${domain} at ${money(item.price)}.`;
   if (action.type === "pull") return `Pulled ${item.title} on ${domain}.`;
@@ -161,11 +183,14 @@ export function productInput(item: SupplierItem, locationId: string, shelf?: She
     title: item.title,
     descriptionHtml: listingNote(item),
     vendor: "Offhand",
-    tags: ["offhand"],
+    tags: item.trendSlug ? ["offhand", `trend:${item.trendSlug}`] : ["offhand"],
     status: status ?? (item.stock > 0 ? "ACTIVE" : "DRAFT"),
     productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
     variants: [variant],
   };
+  if (item.imageUrl && !shelf?.productId) {
+    input.files = [{ originalSource: item.imageUrl, alt: item.title, contentType: "IMAGE" }];
+  }
   if (shelf?.productId) input.id = shelf.productId;
   return input;
 }
