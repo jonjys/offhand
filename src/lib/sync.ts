@@ -11,6 +11,7 @@ export type SupplierItem = {
   fulfillmentType?: "digital" | "physical";
   warehouseRegion?: string;
   rightsCleared?: boolean;
+  trackedDelivery?: boolean;
   trendSlug?: string;
 };
 
