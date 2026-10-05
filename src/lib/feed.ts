@@ -7,6 +7,9 @@ const aliases: Record<string, string[]> = {
   cost: ["cost", "wholesale", "unit cost", "your cost"],
   stock: ["stock", "qty", "quantity", "inventory", "on hand", "available", "count"],
   description: ["description", "body", "details"],
+  tags: ["tags", "keywords", "category", "categories"],
+  deliveryDays: ["delivery days", "shipping days", "lead time", "lead time days"],
+  imageUrl: ["image url", "image", "photo url", "main image"],
 };
 
 function normalizeHeader(value: string) {
@@ -84,6 +87,9 @@ function rowsToItems(headers: string[], rows: string[][]) {
   const costIndex = columnIndex(headers, aliases.cost);
   const stockIndex = columnIndex(headers, aliases.stock);
   const descriptionIndex = columnIndex(headers, aliases.description);
+  const tagsIndex = columnIndex(headers, aliases.tags);
+  const deliveryDaysIndex = columnIndex(headers, aliases.deliveryDays);
+  const imageUrlIndex = columnIndex(headers, aliases.imageUrl);
 
   if (skuIndex < 0 || titleIndex < 0 || (priceIndex < 0 && costIndex < 0)) {
     throw new Error("The feed needs a sku, a title, and a price or a cost. Column names are detected automatically.");
@@ -94,14 +100,21 @@ function rowsToItems(headers: string[], rows: string[][]) {
     const sku = (row[skuIndex] ?? "").trim();
     const title = (row[titleIndex] ?? "").trim();
     if (!sku || !title) continue;
-    const price = moneyValue(row[priceIndex]) ?? (moneyValue(row[costIndex]) ?? 0) * 2;
+    const cost = moneyValue(row[costIndex]);
+    const price = moneyValue(row[priceIndex]) ?? (cost ?? 0) * 2;
     if (!price) continue;
+    const deliveryDays = deliveryDaysIndex >= 0 ? stockValue(row[deliveryDaysIndex]) : undefined;
+    const imageUrl = imageUrlIndex >= 0 ? row[imageUrlIndex]?.trim() : undefined;
     items.push({
       sku,
       title,
       price,
       stock: stockIndex >= 0 ? stockValue(row[stockIndex]) : 1,
       description: descriptionIndex >= 0 ? row[descriptionIndex]?.trim() : undefined,
+      tags: tagsIndex >= 0 ? (row[tagsIndex] ?? "").split(/[|;,]/).map((tag) => tag.trim()).filter(Boolean) : undefined,
+      cost: cost ?? undefined,
+      deliveryDays,
+      imageUrl: imageUrl?.startsWith("https://") ? imageUrl : undefined,
     });
   }
 
