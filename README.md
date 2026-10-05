@@ -2,9 +2,9 @@
 
 A Shopify resale store that stocks itself.
 
-The floor on the homepage is already running. A built-in supplier catalog changes price and stock on its own. Offhand lists anything in stock, reprices when the supplier price moves, and pulls the listing when the count hits zero. There is no approval queue.
+The floor on the homepage is already running. A built-in supplier catalog changes price and stock on its own. Offhand lists anything in stock, reprices when the supplier price moves, and pulls the listing when the count hits zero. Optional trend mode rotates the store through the retail calendar and caps the live shelf at 100 products.
 
-$29 points that same machine at one Shopify store for 30 days. Paste the shop domain, the Dev Dashboard Client ID, and the Client secret once. Offhand refreshes the Shopify token on its own. Leave the feed blank to follow the live catalog, or paste a public CSV (a published Google Sheet works). Columns are detected. After that, the server keeps syncing.
+$29 points that same machine at one Shopify store for 30 days. Paste the shop domain, the Dev Dashboard Client ID, and the Client secret once. Offhand refreshes the Shopify token on its own. Leave the feed blank to follow the live catalog, or paste a public CSV (a published Google Sheet works). Columns are detected. Trend mode requires an HTTPS image plus matching event keywords, and can also use cost and delivery-day columns to reject weak products. After that, the server keeps syncing.
 
 The custom app needs read and write access for products, inventory and publications, and read access for locations. Publications is what lets Offhand put a listing on the Online Store channel; without it the product exists in the admin but no shopper sees it.
 
@@ -28,3 +28,7 @@ The app listens on `http://127.0.0.1:43123`.
 npm test
 npm run lint
 ```
+
+## Trend feed fields
+
+Trend mode detects `sku`, `title`, `price` or `cost`, `stock`, `description`, `tags`, `delivery days`, and `image URL`. It fails closed: a product without stock, a public HTTPS image, a seasonal keyword match, enough margin when cost is known, or enough time to arrive before the event is not published. The calendar currently covers Valentine’s Day, Halloween, Día de Muertos, Christmas, and New Year. Cultural-event products must explicitly identify the event in the supplier data.
