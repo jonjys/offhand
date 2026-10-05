@@ -96,7 +96,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
   const [clientSecret, setClientSecret] = useState("");
   const [feedUrl, setFeedUrl] = useState("");
   const [trendMode, setTrendMode] = useState(true);
-  const [maxProducts, setMaxProducts] = useState(25);
+  const [maxProducts, setMaxProducts] = useState(100);
   const [busy, setBusy] = useState<"pay" | "connect" | null>(null);
   const [error, setError] = useState(cancelled ? "Checkout was cancelled. The floor kept running." : "");
 
@@ -297,7 +297,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
                 />
                 <span>
                   <strong className="block">Follow the retail calendar</strong>
-                  <span className="text-muted-foreground">Requires store policies, cleared image rights, and either a digital download or verified EU delivery in 3–5 days.</span>
+                  <span className="text-muted-foreground">Requires store policies, positive margin after shipping and fees, cleared image rights, and delivery before the use date.</span>
                 </span>
               </label>
               <label className="grid gap-2 text-sm" htmlFor="max-products">
@@ -306,7 +306,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
                   id="max-products"
                   type="number"
                   min={1}
-                  max={25}
+                  max={100}
                   value={maxProducts}
                   onChange={(event) => setMaxProducts(Number(event.target.value))}
                   className="h-11 rounded-lg border border-border bg-background px-3"
@@ -325,7 +325,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
             <header className="flex items-baseline justify-between gap-3">
               <h2 className="font-[family-name:var(--font-fraunces)] text-2xl tracking-tight">{shop.domain}</h2>
               <p className="text-xs text-muted-foreground">
-                {shop.listed} listed · {shop.pulled} pulled · {shop.trendMode ? `trend mode, max ${shop.maxProducts ?? 25}` : shop.feedUrl ? "your feed" : "this catalog"}
+                {shop.listed} listed · {shop.pulled} pulled · {shop.trendMode ? `trend mode, max ${shop.maxProducts ?? 100}` : shop.feedUrl ? "your feed" : "this catalog"}
               </p>
             </header>
             <Tape log={shop.log} />
