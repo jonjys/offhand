@@ -3,6 +3,7 @@ import { isPublicFeedUrl, parseFeed } from "@/lib/feed";
 import { ensureShopifyAccess, pushToShopify } from "@/lib/shopify";
 import { readShops, writeShops, type LogLine, type ShopRecord } from "@/lib/shop-store";
 import { applyPlan, describe, drift, planSync, type ShelfItem, type SupplierItem } from "@/lib/sync";
+import { includeSeasonalPulls, selectTrendProducts } from "@/lib/trends";
 
 export type { LogLine, ShopRecord };
 
@@ -105,6 +106,15 @@ async function advanceShop(machine: Machine, shop: ShopRecord) {
       return;
     }
   }
+  if (shop.trendMode) {
+    const selection = selectTrendProducts(supplier, new Date(), shop.maxProducts ?? 100);
+    supplier = includeSeasonalPulls(selection.items, shop.shelf);
+    shop.supplier = selection.items;
+    if (selection.event) {
+      const note = `Trend mode: ${selection.event.name} · ${selection.items.length} eligible products.`;
+      if (shop.log[0]?.text !== note) shop.log = [stamp(note), ...shop.log].slice(0, 30);
+    }
+  }
   const actions = planSync(supplier, shop.shelf).slice(0, 4);
   if (!actions.length) return;
   try {
@@ -166,6 +176,8 @@ export function publicShop(shop: ShopRecord) {
   return {
     domain: shop.domain,
     feedUrl: shop.feedUrl,
+    trendMode: Boolean(shop.trendMode),
+    maxProducts: shop.maxProducts ?? 100,
     until: shop.until,
     shelf: shop.shelf,
     log: shop.log,
