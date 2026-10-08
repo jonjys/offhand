@@ -32,12 +32,12 @@ export default async function Home({
       </header>
 
       <section className="grid max-w-2xl gap-5">
-        <p className="text-sm tracking-[0.18em] text-primary uppercase">Already running</p>
+        <p className="text-sm tracking-[0.18em] text-primary uppercase">See the machine in action</p>
         <h1 className="font-[family-name:var(--font-fraunces)] text-5xl leading-[0.95] tracking-tight sm:text-6xl">
           A Shopify resale store that stocks itself.
         </h1>
         <p className="max-w-xl text-lg leading-8 text-muted-foreground">
-          The supplier moves. Offhand lists the product, changes the price, and pulls the listing when the count hits zero. There is no queue and nothing to approve.
+          Connect a real supplier feed. Offhand lists eligible products, updates prices and stock, and withdraws listings when supplier evidence or store policies stop passing.
         </p>
       </section>
 
@@ -46,12 +46,12 @@ export default async function Home({
       </section>
 
       <section id="proof" className="grid gap-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
-        <p className="text-sm tracking-[0.18em] text-primary uppercase">On a real store</p>
+        <p className="text-sm tracking-[0.18em] text-primary uppercase">The connected store</p>
         <h2 className="font-[family-name:var(--font-fraunces)] text-3xl tracking-tight">
-          The same machine, pointed at a Shopify store you can open.
+          Explore the store separately from the demo.
         </h2>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          Every product in the collection below was listed by Offhand from the catalog above. Nobody typed a title or set a price. Open any product and the note on it says so. When the catalog pulls an item, the listing goes with it.
+          The animated catalog above is a demonstration. It supplies no products to this Shopify store. Real listings require a supplier feed, stock, positive margin, image rights, delivery information and configured store policies. Supplier imports remain separate and unpublished until their evidence is verified.
         </p>
         <div className="flex flex-wrap gap-3 text-sm">
           <a
@@ -60,7 +60,7 @@ export default async function Home({
             rel="noopener noreferrer"
             target="_blank"
           >
-            Open the live collection
+            Open the store collection
           </a>
           <a
             href={demoStore.howItWorksUrl}
@@ -74,7 +74,7 @@ export default async function Home({
       </section>
 
       <footer className="border-t border-border pt-6 text-sm leading-6 text-muted-foreground">
-        <p>The floor on this page is the machine, using a live resale catalog. The store linked above is that machine against a real Shopify admin. A paid store follows the same rules against yours.</p>
+        <p>The animated floor is a demo. Connected stores use their own supplier feeds. Feed declarations and configured policies must be independently verified before enabling sales.</p>
         <p className="mt-2">Nytto Labs · $29 for 30 days, tax included.</p>
       </footer>
     </main>

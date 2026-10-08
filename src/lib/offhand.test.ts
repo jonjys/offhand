@@ -282,6 +282,35 @@ test("universal gates reject invalid numbers, image URLs, duplicates and unknown
   assert.equal(selectSaleProducts([safe], NaN).length, 0);
 });
 
+test("CSV duplicate SKUs block the feed even when a conflicting row would be discarded", () => {
+  const header = "sku,title,price,cost,shipping cost,fee percent,stock,delivery days,image url,fulfillment type,warehouse region,rights cleared,tracked delivery";
+  const valid = "A,Pumpkin,20,5,1,3,2,4,https://supplier.example/a.jpg,physical,EU,true,true";
+  assert.equal(selectSaleProducts(parseFeed(`${header}\n${valid}`)).length, 1);
+  for (const conflict of [
+    " A ,Pumpkin,,5,1,3,0,4,https://supplier.example/a.jpg,physical,EU,false,true",
+    "A,,20,5,1,3,0,4,https://supplier.example/a.jpg,physical,EU,false,true",
+    "A,Pumpkin,-20,5,1,3,0,4,https://supplier.example/a.jpg,physical,EU,false,true",
+    valid,
+  ]) {
+    for (const rows of [[valid, conflict], [conflict, valid]]) {
+      assert.throws(() => parseFeed(`${header}\n${rows.join("\n")}`), /duplicate SKUs/);
+    }
+  }
+});
+
+test("JSON duplicate SKUs block the feed before invalid price or title rows disappear", () => {
+  const valid = { sku: "A", title: "Pumpkin", price: 20, cost: 5, "shipping cost": 1, "fee percent": 3, stock: 2, "delivery days": 4, "image url": "https://supplier.example/a.jpg", "fulfillment type": "physical", "warehouse region": "EU", "rights cleared": true, "tracked delivery": true };
+  assert.equal(selectSaleProducts(parseFeed(JSON.stringify([valid]))).length, 1);
+  for (const invalid of [{ price: "" }, { price: null }, { price: -20 }, { title: "" }]) {
+    const conflict = { ...valid, ...invalid, sku: " A ", stock: 0, "rights cleared": false };
+    for (const rows of [[valid, conflict], [conflict, valid]]) {
+      for (const feed of [rows, { products: rows }]) {
+        assert.throws(() => parseFeed(JSON.stringify(feed)), /duplicate SKUs/);
+      }
+    }
+  }
+});
+
 test("policy failure drafts all old managed products without inventory access or publishing", async () => {
   const writes: Record<string, unknown>[] = [];
   const fetchImpl: typeof fetch = async (_url, init) => {

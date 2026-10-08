@@ -119,6 +119,16 @@ function rowsToItems(headers: string[], rows: string[][]) {
     throw new Error("The feed needs a sku, a title, and an explicit selling price. Column names are detected automatically.");
   }
 
+  // Count raw SKU values before dropping invalid rows. A conflicting row
+  // must not disappear and leave another row eligible for publication.
+  const seenSkus = new Set<string>();
+  for (const row of rows) {
+    const sku = (row[skuIndex] ?? "").trim();
+    if (!sku) continue;
+    if (seenSkus.has(sku)) throw new Error("The supplier feed contains duplicate SKUs; publishing is blocked.");
+    seenSkus.add(sku);
+  }
+
   const items: SupplierItem[] = [];
   for (const row of rows) {
     const sku = (row[skuIndex] ?? "").trim();

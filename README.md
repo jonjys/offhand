@@ -8,7 +8,9 @@ $29 points that same machine at one Shopify store for 30 days. Paste the shop do
 
 The custom app needs read and write access for products, inventory and publications, and read access for locations and legal policies. Publications is what lets Offhand put a listing on the Online Store channel; without it the product exists in the admin but no shopper sees it.
 
-Every listing Offhand writes carries the vendor `Offhand`, the tag `offhand`, and a note saying it was listed from the supplier feed. The store at [pqwbeh-yy.myshopify.com](https://pqwbeh-yy.myshopify.com/collections/stocked-by-offhand) is that machine running against a real Shopify admin, linked from the homepage as proof.
+Duplicate supplier SKUs reject the entire feed before invalid rows are discarded, including rows with missing titles or invalid prices. As with any feed error, the next successful Shopify sync withdraws the managed shelf rather than publishing from ambiguous data.
+
+Every listing Offhand writes carries the vendor `Offhand`, the tag `offhand`, and a note saying it was listed from the supplier feed. The homepage links the connected store at [pqwbeh-yy.myshopify.com](https://pqwbeh-yy.myshopify.com/collections/stocked-by-offhand) separately from the animated demo. The demo catalog is not evidence for real listings, and an empty collection is not proof of a working live supplier integration.
 
 A connected store is saved in private storage, so the shop token survives a new server. On the free host the store syncs once a day, and again while the paid page is open.
 
