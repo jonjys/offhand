@@ -1,9 +1,10 @@
+import { selectSaleProducts } from "@/lib/trends";
 import { money, type Action, type ShelfItem, type SupplierItem } from "@/lib/sync";
 
 const API_VERSION = "2026-10";
 
-const PRODUCT_SET = `mutation OffhandProductSet($input: ProductSetInput!) {
-  productSet(synchronous: true, input: $input) {
+const PRODUCT_SET = `mutation OffhandProductSet($input: ProductSetInput!, $identifier: ProductSetIdentifiers) {
+  productSet(synchronous: true, input: $input, identifier: $identifier) {
     product {
       id
       status
@@ -18,9 +19,34 @@ const PRODUCT_SET = `mutation OffhandProductSet($input: ProductSetInput!) {
   }
 }`;
 
+const DRAFT_PRODUCT = `mutation OffhandDraftProduct($product: ProductUpdateInput!) {
+  productUpdate(product: $product) {
+    product { id status }
+    userErrors { field message }
+  }
+}`;
+
 const LOCATIONS = `query OffhandLocations {
   locations(first: 1) {
     nodes { id }
+  }
+}`;
+
+const SHOP_POLICIES = `query OffhandShopPolicies {
+  shop {
+    shopPolicies { id type body url }
+  }
+}`;
+
+const ONLINE_STORE = `query OffhandPublications {
+  publications(first: 10) {
+    nodes { id name }
+  }
+}`;
+
+const PUBLISH = `mutation OffhandPublish($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) {
+    userErrors { field message }
   }
 }`;
 
@@ -120,6 +146,24 @@ export function createShopifyClient(domain: string, token: string, fetchImpl: ty
   };
 }
 
+export async function shopPolicyReadiness(domain: string, token: string, fetchImpl: typeof fetch = fetch) {
+  const graphql = createShopifyClient(domain, token, fetchImpl);
+  const data = await graphql<{
+    shop: { shopPolicies: { id: string; type: string; body: string; url: string }[] };
+  }>(SHOP_POLICIES, {});
+  const present = new Set(
+    data.shop.shopPolicies.filter((policy) => policy.body.trim().length > 0 && policy.url?.startsWith("https://")).map((policy) => policy.type),
+  );
+  const missing = [
+    !present.has("PRIVACY_POLICY") && "privacy policy",
+    !present.has("REFUND_POLICY") && "refund/returns policy",
+    !present.has("SHIPPING_POLICY") && "shipping policy",
+    !present.has("TERMS_OF_SERVICE") && "terms of service",
+    !present.has("CONTACT_INFORMATION") && "contact information",
+  ].filter(Boolean) as string[];
+  return { ready: missing.length === 0, missing };
+}
+
 function shopNote(action: Action, item: SupplierItem, domain: string) {
   if (action.type === "list") return `Listed ${item.title} on ${domain} at ${money(item.price)}.`;
   if (action.type === "pull") return `Pulled ${item.title} on ${domain}.`;
@@ -128,10 +172,18 @@ function shopNote(action: Action, item: SupplierItem, domain: string) {
   return `Updated ${item.title} stock on ${domain} to ${action.to}.`;
 }
 
-function productInput(item: SupplierItem, locationId: string, shelf?: ShelfItem, status?: "ACTIVE" | "DRAFT") {
+/** The note every listing carries, so a shopper can see nobody typed it. */
+export function listingNote(item: SupplierItem) {
+  const own = item.description?.trim();
+  const lead = own ? `<p>${own}</p>` : "";
+  return `${lead}<p>Listed by <a href="https://offhand.nyttolabs.com">Offhand</a> from the supplier feed. The price follows the supplier, and the listing is pulled when the supplier runs out.</p>`;
+}
+
+export function productInput(item: SupplierItem, locationId: string, shelf?: ShelfItem, status?: "ACTIVE" | "DRAFT") {
   const variant: Record<string, unknown> = {
     optionValues: [{ optionName: "Title", name: "Default Title" }],
     sku: item.sku,
+    inventoryPolicy: "DENY",
     price: item.price,
     inventoryItem: { tracked: true, sku: item.sku },
     inventoryQuantities: [{ locationId, name: "available", quantity: Math.max(0, item.stock) }],
@@ -140,13 +192,40 @@ function productInput(item: SupplierItem, locationId: string, shelf?: ShelfItem,
 
   const input: Record<string, unknown> = {
     title: item.title,
-    descriptionHtml: `<p>${item.description ?? "Listed by Offhand from the supplier feed."}</p>`,
+    descriptionHtml: listingNote(item),
+    vendor: "Offhand",
+    tags: item.trendSlug ? ["offhand", `trend:${item.trendSlug}`] : ["offhand"],
     status: status ?? (item.stock > 0 ? "ACTIVE" : "DRAFT"),
     productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
     variants: [variant],
   };
-  if (shelf?.productId) input.id = shelf.productId;
+  if (item.imageUrl && !shelf?.productId) {
+    input.files = [{ originalSource: item.imageUrl, alt: item.title, contentType: "IMAGE" }];
+  }
   return input;
+}
+
+/**
+ * A product Shopify holds but the online store does not show is not listed
+ * in any sense a shopper cares about. productSet alone leaves it unpublished,
+ * so every list and relist is followed by a publish to the Online Store
+ * channel. Missing channel (a store without one) is not an error: the
+ * listing still exists in the admin.
+ */
+async function onlineStoreId(graphql: Graphql, cached?: string | null) {
+  if (cached !== undefined) return cached;
+  const data = await graphql<{ publications: { nodes: { id: string; name: string }[] } }>(ONLINE_STORE, {});
+  return data.publications.nodes.find((node) => node.name === "Online Store")?.id ?? null;
+}
+
+async function publish(graphql: Graphql, productId: string, publicationId: string) {
+  const data = await graphql<{ publishablePublish: { userErrors: { message: string }[] } }>(PUBLISH, {
+    id: productId,
+    input: [{ publicationId }],
+  });
+  if (data.publishablePublish.userErrors.length) {
+    throw new Error(data.publishablePublish.userErrors.map((error) => error.message).join(" "));
+  }
 }
 
 async function locationId(graphql: Graphql, cached?: string) {
@@ -161,6 +240,8 @@ export async function pushToShopify(input: {
   domain: string;
   token: string;
   locationId?: string;
+  /** Online Store publication id; null once looked up and absent. */
+  publicationId?: string | null;
   actions: Action[];
   supplier: SupplierItem[];
   shelf: ShelfItem[];
@@ -172,39 +253,78 @@ export async function pushToShopify(input: {
   const bySku = new Map(shelf.map((item) => [item.sku, item]));
   const source = new Map(input.supplier.map((item) => [item.sku, item]));
   let resolvedLocation = input.locationId;
+  let resolvedPublication = input.publicationId;
 
-  for (const action of input.actions) {
+  let policiesReady = false;
+  try {
+    const policies = await shopPolicyReadiness(input.domain, input.token, input.fetchImpl);
+    policiesReady = policies.ready;
+    if (!policiesReady) notes.push(`Publishing blocked: add ${policies.missing.join(", ")} in Shopify.`);
+  } catch {
+    notes.push("Publishing blocked: Shopify policies could not be verified.");
+  }
+  const eligible = new Set((policiesReady ? selectSaleProducts(input.supplier) : []).map((item) => item.sku));
+  const forcedPulls: Action[] = shelf.filter((item) => item.status === "active" && !eligible.has(item.sku))
+    .map((item) => ({ type: "pull", sku: item.sku }));
+  for (const current of shelf) {
+    if (!source.has(current.sku)) source.set(current.sku, { ...current, stock: 0 });
+  }
+  const actions = [...forcedPulls, ...input.actions.filter((action) =>
+    action.type === "pull" ? !forcedPulls.some((pull) => pull.sku === action.sku) : eligible.has(action.sku))];
+  let withdrawalFailed = false;
+
+  for (const action of actions) {
+    if (withdrawalFailed && action.type !== "pull") continue;
     const item = source.get(action.sku);
     if (!item) continue;
     const current = bySku.get(action.sku);
     try {
+      if (action.type === "pull") {
+        if (!current?.productId) throw new Error("The managed product ID is missing; withdrawal cannot be verified.");
+        const draft = await graphql<{ productUpdate: { product: { id: string; status: string } | null; userErrors: { message: string }[] } }>(DRAFT_PRODUCT,
+          { product: { id: current.productId, status: "DRAFT" } });
+        if (draft.productUpdate.userErrors.length || draft.productUpdate.product?.status !== "DRAFT") throw new Error("Shopify did not confirm withdrawal.");
+        bySku.set(current.sku, { ...current, status: "draft", stock: 0, published: false });
+        notes.push(shopNote(action, item, input.domain));
+        continue;
+      }
       resolvedLocation = await locationId(graphql, resolvedLocation);
-      const status = action.type === "pull" ? "DRAFT" : "ACTIVE";
-      const stockItem = action.type === "pull" ? { ...item, stock: 0 } : item;
+      const status = "ACTIVE";
+      const stockItem = item;
       const data = await graphql<{
         productSet: {
           product: { id: string; variants: { nodes: { id: string; inventoryItem: { id: string } | null }[] } } | null;
           userErrors: { message: string }[];
         };
-      }>(PRODUCT_SET, { input: productInput(stockItem, resolvedLocation, current, status) });
+      }>(PRODUCT_SET, { input: productInput(stockItem, resolvedLocation, current, status),
+        identifier: current?.productId ? { id: current.productId } : null });
 
       if (data.productSet.userErrors.length) {
         throw new Error(data.productSet.userErrors.map((error) => error.message).join(" "));
       }
 
       const product = data.productSet.product;
+      if (!product) throw new Error("Shopify did not confirm the product update.");
       const variant = product?.variants.nodes[0];
       const next: ShelfItem = {
         sku: item.sku,
         title: item.title,
-        price: action.type === "pull" ? (current?.price ?? item.price) : item.price,
-        stock: action.type === "pull" ? 0 : item.stock,
-        status: action.type === "pull" ? "draft" : "active",
+        price: item.price,
+        stock: item.stock,
+        status: "active",
         productId: product?.id ?? current?.productId,
         variantId: variant?.id ?? current?.variantId,
         inventoryItemId: variant?.inventoryItem?.id ?? current?.inventoryItemId,
       };
       bySku.set(item.sku, next);
+
+      if (product && (action.type === "list" || action.type === "relist")) {
+        resolvedPublication = await onlineStoreId(graphql, resolvedPublication);
+        if (resolvedPublication) {
+          await publish(graphql, product.id, resolvedPublication);
+          next.published = true;
+        }
+      }
 
       if (next.inventoryItemId && action.type !== "list") {
         const inventory = await graphql<{ inventorySetQuantities: { userErrors: { message: string }[] } }>(INVENTORY_SET, {
@@ -230,9 +350,27 @@ export async function pushToShopify(input: {
 
       notes.push(shopNote(action, item, input.domain));
     } catch (error) {
+      if (action.type === "pull") withdrawalFailed = true;
       notes.push(`${item.title} stayed put. ${error instanceof Error ? error.message : "Shopify refused the update."}`);
     }
   }
 
-  return { shelf: [...bySku.values()], notes, locationId: resolvedLocation };
+  // Listings made before Offhand published to the channel, or on a store
+  // whose channel appeared later, are put on it now. A handful per run keeps
+  // the daily sync cheap; the rest follow the next day.
+  const unpublished = [...bySku.values()].filter((item) => !withdrawalFailed && eligible.has(item.sku) && item.status === "active" && item.productId && !item.published);
+  for (const item of unpublished.slice(0, 10)) {
+    try {
+      resolvedPublication = await onlineStoreId(graphql, resolvedPublication);
+      if (!resolvedPublication) break;
+      await publish(graphql, item.productId as string, resolvedPublication);
+      item.published = true;
+      notes.push(`Put ${item.title} on the online store of ${input.domain}.`);
+    } catch (error) {
+      notes.push(`${item.title} is not on the online store yet. ${error instanceof Error ? error.message : "Shopify refused the update."}`);
+    }
+  }
+
+  return { shelf: [...bySku.values()], notes, locationId: resolvedLocation, publicationId: resolvedPublication };
 }
+

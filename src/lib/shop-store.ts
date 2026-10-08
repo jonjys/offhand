@@ -10,11 +10,15 @@ export type ShopRecord = {
   domain: string;
   token: string;
   feedUrl: string;
+  trendMode?: boolean;
+  maxProducts?: number;
   until: string;
   clientId?: string;
   clientSecret?: string;
   tokenExpiresAt?: string;
   locationId?: string;
+  /** Online Store publication id; null when the store has no such channel. */
+  publicationId?: string | null;
   shelf: ShelfItem[];
   log: LogLine[];
   supplier?: SupplierItem[];

@@ -3,6 +3,7 @@ import { isPublicFeedUrl, parseFeed } from "@/lib/feed";
 import { ensureShopifyAccess, pushToShopify } from "@/lib/shopify";
 import { readShops, writeShops, type LogLine, type ShopRecord } from "@/lib/shop-store";
 import { applyPlan, describe, drift, planSync, type ShelfItem, type SupplierItem } from "@/lib/sync";
+import { includeSeasonalPulls, selectSaleProducts, selectTrendProducts, trendForDate } from "@/lib/trends";
 
 export type { LogLine, ShopRecord };
 
@@ -85,7 +86,7 @@ async function readFeed(url: string) {
   return parseFeed(text);
 }
 
-async function advanceShop(machine: Machine, shop: ShopRecord) {
+async function advanceShop(_machine: Machine, shop: ShopRecord) {
   if (Date.parse(shop.until) < Date.now()) return;
   try {
     await ensureShopifyAccess(shop);
@@ -94,30 +95,48 @@ async function advanceShop(machine: Machine, shop: ShopRecord) {
     if (shop.log[0]?.text !== text) shop.log = [stamp(text), ...shop.log].slice(0, 30);
     return;
   }
-  let supplier = machine.supplier;
-  if (shop.feedUrl) {
-    try {
-      supplier = await readFeed(shop.feedUrl);
-      shop.supplier = supplier;
-    } catch (error) {
-      const text = error instanceof Error ? error.message : "The feed could not be read.";
-      if (shop.log[0]?.text !== text) shop.log = [stamp(text), ...shop.log].slice(0, 30);
-      return;
+  let supplier: SupplierItem[] = [];
+  try {
+    if (!shop.feedUrl) throw new Error("Publishing blocked: a real supplier feed is required.");
+    supplier = await readFeed(shop.feedUrl);
+  } catch (error) {
+    const text = error instanceof Error ? error.message : "The feed could not be read.";
+    if (shop.log[0]?.text !== text) shop.log = [stamp(text), ...shop.log].slice(0, 30);
+  }
+  if (shop.trendMode) {
+    const syncDate = new Date();
+    const activeEvent = trendForDate(syncDate);
+    const activeSkus = new Set(shop.shelf.filter((item) => item.status === "active").map((item) => item.sku));
+    const selectionSource = activeEvent?.kind === "pricing"
+      ? supplier.filter((item) => activeSkus.has(item.sku))
+      : supplier;
+    const selection = selectTrendProducts(selectionSource, syncDate, shop.maxProducts ?? 100);
+    supplier = selection.items;
+    shop.supplier = selection.items;
+    if (selection.event) {
+      const note = `Trend mode: ${selection.event.name} · ${selection.items.length} eligible products.`;
+      if (shop.log[0]?.text !== note) shop.log = [stamp(note), ...shop.log].slice(0, 30);
     }
   }
-  const actions = planSync(supplier, shop.shelf).slice(0, 4);
-  if (!actions.length) return;
+  if (!shop.trendMode) supplier = selectSaleProducts(supplier, shop.maxProducts ?? 100);
+  shop.supplier = supplier;
+  supplier = includeSeasonalPulls(supplier, shop.shelf);
+  const planned = planSync(supplier, shop.shelf);
+  const actions = [...planned.filter((action) => action.type === "pull"),
+    ...planned.filter((action) => action.type !== "pull").slice(0, 4)];
   try {
     const result = await pushToShopify({
       domain: shop.domain,
       token: shop.token,
       locationId: shop.locationId,
+      publicationId: shop.publicationId,
       actions,
       supplier,
       shelf: shop.shelf,
     });
     shop.shelf = result.shelf;
     shop.locationId = result.locationId;
+    shop.publicationId = result.publicationId;
     const fresh = result.notes.filter((note) => note !== shop.log[0]?.text);
     if (fresh.length) shop.log = [...fresh.map(stamp), ...shop.log].slice(0, 30);
   } catch (error) {
@@ -164,6 +183,8 @@ export function publicShop(shop: ShopRecord) {
   return {
     domain: shop.domain,
     feedUrl: shop.feedUrl,
+    trendMode: Boolean(shop.trendMode),
+    maxProducts: shop.maxProducts ?? 100,
     until: shop.until,
     shelf: shop.shelf,
     log: shop.log,
@@ -208,3 +229,4 @@ export async function saveShop(record: ShopRecord) {
   await saveShops(machine.shops);
   return publicShop(next);
 }
+

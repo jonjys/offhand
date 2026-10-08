@@ -4,6 +4,17 @@ export type SupplierItem = {
   price: number;
   stock: number;
   description?: string;
+  tags?: string[];
+  cost?: number;
+  shippingCost?: number;
+  feePercent?: number;
+  deliveryDays?: number;
+  imageUrl?: string;
+  fulfillmentType?: "digital" | "physical";
+  warehouseRegion?: string;
+  rightsCleared?: boolean;
+  trackedDelivery?: boolean;
+  trendSlug?: string;
 };
 
 export type ShelfItem = {
@@ -15,6 +26,8 @@ export type ShelfItem = {
   productId?: string;
   variantId?: string;
   inventoryItemId?: string;
+  /** Set once the product is on the Online Store channel. */
+  published?: boolean;
 };
 
 export type Action =
