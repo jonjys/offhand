@@ -233,7 +233,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
         {paid && !shop ? (
           <form className="grid gap-3" onSubmit={(event) => void connect(event)}>
             <p className="text-sm leading-6 text-muted-foreground">
-              Paste the shop once. Leave the feed empty and this live catalog is the supplier. Or paste a public CSV, including a published Google Sheet. Columns are detected. After this, you do not approve listings.
+              Paste the shop and a real supplier CSV or JSON feed, including a published Google Sheet. Products are listed only when stock, margin, delivery, image rights and store policies are verified.
             </p>
             <div className="grid gap-3">
               <label className="grid gap-2 text-sm" htmlFor="shop-domain">
@@ -275,9 +275,11 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
               </label>
             </div>
             <label className="grid gap-2 text-sm" htmlFor="feed-url">
-              Supplier feed URL, optional
+              Supplier feed URL
               <input
                 id="feed-url"
+                type="url"
+                required
                 value={feedUrl}
                 onChange={(event) => setFeedUrl(event.target.value)}
                 placeholder="https://supplier.example/catalog.csv"
@@ -325,7 +327,7 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
             <header className="flex items-baseline justify-between gap-3">
               <h2 className="font-[family-name:var(--font-fraunces)] text-2xl tracking-tight">{shop.domain}</h2>
               <p className="text-xs text-muted-foreground">
-                {shop.listed} listed · {shop.pulled} pulled · {shop.trendMode ? `trend mode, max ${shop.maxProducts ?? 100}` : shop.feedUrl ? "your feed" : "this catalog"}
+                {shop.listed} listed · {shop.pulled} pulled · {shop.trendMode ? `trend mode, max ${shop.maxProducts ?? 100}` : shop.feedUrl ? "your feed" : "supplier feed required"}
               </p>
             </header>
             <Tape log={shop.log} />
@@ -341,3 +343,4 @@ export function FloorView({ initial, cancelled }: { initial: FloorSnapshot; canc
     </div>
   );
 }
+

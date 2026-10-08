@@ -28,18 +28,12 @@ function columnIndex(headers: string[], names: string[]) {
     const index = normalized.indexOf(name);
     if (index >= 0) return index;
   }
-  for (const name of names) {
-    const index = normalized.findIndex((header) => header.includes(name));
-    if (index >= 0) return index;
-  }
   return -1;
 }
 
 function moneyValue(value: string | undefined) {
-  if (!value) return null;
-  const number = Number(value.replace(/[^0-9.]/g, ""));
-  if (!Number.isFinite(number) || number <= 0) return null;
-  return Math.round(number);
+  const number = nonNegativeNumber(value);
+  return number !== undefined && number > 0 ? number : null;
 }
 
 function booleanValue(value: string | undefined) {
@@ -56,15 +50,15 @@ function fulfillmentValue(value: string | undefined) {
 
 function nonNegativeNumber(value: string | undefined) {
   if (value === undefined || value.trim() === "") return undefined;
-  const number = Number(value.replace(/[^0-9.-]/g, ""));
+  const cleaned = value.trim().replace(/^(?:SEK|USD|EUR|[$€£])\s*/i, "").replace(/\s*(?:SEK|USD|EUR)$/i, "");
+  if (!/^-?\d+(?:[.,]\d+)?$/.test(cleaned)) return undefined;
+  const number = Number(cleaned.replace(",", "."));
   return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
 function stockValue(value: string | undefined) {
-  if (!value) return 0;
-  const number = Number(value.replace(/[^0-9.-]/g, ""));
-  if (!Number.isFinite(number)) return 0;
-  return Math.max(0, Math.floor(number));
+  const number = nonNegativeNumber(value);
+  return number === undefined ? 0 : Math.floor(number);
 }
 
 export function parseCsv(text: string) {
@@ -121,8 +115,18 @@ function rowsToItems(headers: string[], rows: string[][]) {
   const rightsClearedIndex = columnIndex(headers, aliases.rightsCleared);
   const trackedDeliveryIndex = columnIndex(headers, aliases.trackedDelivery);
 
-  if (skuIndex < 0 || titleIndex < 0 || (priceIndex < 0 && costIndex < 0)) {
-    throw new Error("The feed needs a sku, a title, and a price or a cost. Column names are detected automatically.");
+  if (skuIndex < 0 || titleIndex < 0 || priceIndex < 0) {
+    throw new Error("The feed needs a sku, a title, and an explicit selling price. Column names are detected automatically.");
+  }
+
+  // Count raw SKU values before dropping invalid rows. A conflicting row
+  // must not disappear and leave another row eligible for publication.
+  const seenSkus = new Set<string>();
+  for (const row of rows) {
+    const sku = (row[skuIndex] ?? "").trim();
+    if (!sku) continue;
+    if (seenSkus.has(sku)) throw new Error("The supplier feed contains duplicate SKUs; publishing is blocked.");
+    seenSkus.add(sku);
   }
 
   const items: SupplierItem[] = [];
@@ -130,16 +134,16 @@ function rowsToItems(headers: string[], rows: string[][]) {
     const sku = (row[skuIndex] ?? "").trim();
     const title = (row[titleIndex] ?? "").trim();
     if (!sku || !title) continue;
-    const cost = moneyValue(row[costIndex]);
-    const price = moneyValue(row[priceIndex]) ?? (cost ?? 0) * 2;
+    const cost = nonNegativeNumber(row[costIndex]);
+    const price = moneyValue(row[priceIndex]);
     if (!price) continue;
-    const deliveryDays = deliveryDaysIndex >= 0 ? stockValue(row[deliveryDaysIndex]) : undefined;
+    const deliveryDays = deliveryDaysIndex >= 0 ? nonNegativeNumber(row[deliveryDaysIndex]) : undefined;
     const imageUrl = imageUrlIndex >= 0 ? row[imageUrlIndex]?.trim() : undefined;
     items.push({
       sku,
       title,
       price,
-      stock: stockIndex >= 0 ? stockValue(row[stockIndex]) : 1,
+      stock: stockIndex >= 0 ? stockValue(row[stockIndex]) : 0,
       description: descriptionIndex >= 0 ? row[descriptionIndex]?.trim() : undefined,
       tags: tagsIndex >= 0 ? (row[tagsIndex] ?? "").split(/[|;,]/).map((tag) => tag.trim()).filter(Boolean) : undefined,
       cost: cost ?? undefined,
@@ -200,3 +204,4 @@ export function isPublicFeedUrl(value: string) {
   if (/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host)) return false;
   return true;
 }
+

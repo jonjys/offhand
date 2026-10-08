@@ -4,7 +4,10 @@ import { catalog } from "./catalog";
 import { parseFeed } from "./feed";
 import { accessStillGood, listingNote, mintShopifyToken, productInput, pushToShopify, shopDomain } from "./shopify";
 import { planSync, runUnattended } from "./sync";
-import { includeSeasonalPulls, selectTrendProducts, trendForDate } from "./trends";
+import { includeSeasonalPulls, selectSaleProducts, selectTrendProducts, trendForDate } from "./trends";
+
+const policies = { shop: { shopPolicies: ["PRIVACY_POLICY", "REFUND_POLICY", "SHIPPING_POLICY", "TERMS_OF_SERVICE", "CONTACT_INFORMATION"].map((type) => ({ id: type, type, body: "Reviewed policy", url: `https://store.example/policies/${type}` })) } };
+const verifiedCatalog = catalog.map((item) => ({ ...item, cost: 1, shippingCost: 0, feePercent: 3, deliveryDays: 4, imageUrl: "https://supplier.example/image.jpg", fulfillmentType: "physical" as const, warehouseRegion: "EU", rightsCleared: true, trackedDelivery: true }));
 
 test("the machine lists a full shelf on its own, then pulls and reprices", () => {
   const first = runUnattended(catalog, 1);
@@ -24,7 +27,7 @@ test("a zero-stock product is never listed", () => {
 });
 
 test("a csv with odd headers is read without a mapping step", () => {
-  const items = parseFeed("Item #,Product Name,Qty,Your Cost\nAB-1,Wool coat,2,40\n");
+  const items = parseFeed("Item #,Product Name,Qty,Your Cost,Retail\nAB-1,Wool coat,2,40,80\n");
   assert.equal(items[0]?.sku, "AB-1");
   assert.equal(items[0]?.title, "Wool coat");
   assert.equal(items[0]?.stock, 2);
@@ -68,6 +71,7 @@ test("shopify push lists a product and stores the ids", async () => {
   const fetchImpl: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
     calls.push(body);
+    if (body.query.includes("OffhandShopPolicies")) return Response.json({ data: policies });
     if (body.query.includes("OffhandLocations")) {
       return Response.json({ data: { locations: { nodes: [{ id: "gid://shopify/Location/1" }] } } });
     }
@@ -98,7 +102,7 @@ test("shopify push lists a product and stores the ids", async () => {
     domain: "https://demo-shop.myshopify.com/admin",
     token: "shpat_test",
     actions: [{ type: "list", sku: "DUNK-PANDA" }],
-    supplier: catalog,
+    supplier: verifiedCatalog,
     shelf: [],
     fetchImpl,
   });
@@ -138,6 +142,7 @@ test("listings made before the channel was known are put on it on the next pass"
   const published: string[] = [];
   const fetchImpl: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+    if (body.query.includes("OffhandShopPolicies")) return Response.json({ data: policies });
     if (body.query.includes("OffhandPublications")) return Response.json({ data: { publications: { nodes: [{ id: "gid://shopify/Publication/7", name: "Online Store" }] } } });
     if (body.query.includes("OffhandPublish")) {
       published.push(String(body.variables.id));
@@ -149,7 +154,7 @@ test("listings made before the channel was known are put on it on the next pass"
     domain: "demo-shop.myshopify.com",
     token: "t",
     actions: [],
-    supplier: catalog,
+    supplier: verifiedCatalog,
     shelf: [
       { sku: "BOSTON", title: "Birkenstock Boston", price: 58, stock: 5, status: "active", productId: "gid://shopify/Product/1" },
       { sku: "WM-22", title: "Sony Walkman WM-22", price: 95, stock: 0, status: "draft", productId: "gid://shopify/Product/2" },
@@ -166,12 +171,14 @@ test("listings made before the channel was known are put on it on the next pass"
 test("a store without an online store channel is still listed in the admin", async () => {
   const fetchImpl: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes("OffhandShopPolicies")) return Response.json({ data: policies });
     if (body.query.includes("OffhandLocations")) return Response.json({ data: { locations: { nodes: [{ id: "gid://shopify/Location/1" }] } } });
+    if (body.query.includes("OffhandShopPolicies")) return Response.json({ data: policies });
     if (body.query.includes("OffhandPublications")) return Response.json({ data: { publications: { nodes: [] } } });
     if (body.query.includes("OffhandPublish")) throw new Error("must not publish without a channel");
     return Response.json({ data: { productSet: { product: { id: "gid://shopify/Product/1", status: "ACTIVE", variants: { nodes: [] } }, userErrors: [] } } });
   };
-  const result = await pushToShopify({ domain: "demo-shop.myshopify.com", token: "t", actions: [{ type: "list", sku: "BOSTON" }], supplier: catalog, shelf: [], fetchImpl });
+  const result = await pushToShopify({ domain: "demo-shop.myshopify.com", token: "t", actions: [{ type: "list", sku: "BOSTON" }], supplier: verifiedCatalog, shelf: [], fetchImpl });
   assert.equal(result.publicationId, null);
   assert.match(result.notes[0] ?? "", /Listed Birkenstock Boston/);
 });
@@ -252,4 +259,99 @@ test("Black Friday is a pricing period", () => {
   const event = trendForDate(new Date("2026-11-27T12:00:00Z"));
   assert.equal(event?.slug, "black-friday-cyber-week");
   assert.equal(event?.kind, "pricing");
+});
+
+
+
+test("feeds never invent inventory or a selling price", () => {
+  assert.equal(parseFeed("sku,title,price\nA,Lamp,40")[0].stock, 0);
+  assert.throws(() => parseFeed("sku,title,cost\nA,Lamp,20"), /selling price/);
+  assert.throws(() => parseFeed("sku,title,fee percent,cost\nA,Lamp,3,20"), /selling price/);
+  assert.equal(parseFeed('sku,title,price,stock,delivery days\nA,Lamp,"40,50",1,')[0].price, 40.5);
+  assert.equal(parseFeed('sku,title,price,stock,delivery days\nA,Lamp,40,1,')[0].deliveryDays, undefined);
+  assert.throws(() => parseFeed("sku,title,price,stock\nA,Lamp,-40,1"), /no products/);
+});
+
+test("universal gates reject invalid numbers, image URLs, duplicates and unknown caps", () => {
+  const safe = verifiedCatalog[0];
+  assert.equal(selectSaleProducts([safe]).length, 1);
+  for (const change of [{ stock: NaN }, { cost: -1 }, { feePercent: Infinity }, { price: Infinity }, { imageUrl: "http://supplier.example/image.jpg" }, { rightsCleared: false }, { trackedDelivery: false }]) {
+    assert.equal(selectSaleProducts([{ ...safe, ...change }]).length, 0);
+  }
+  assert.equal(selectSaleProducts([safe, safe]).length, 0);
+  assert.equal(selectSaleProducts([safe], NaN).length, 0);
+});
+
+test("CSV duplicate SKUs block the feed even when a conflicting row would be discarded", () => {
+  const header = "sku,title,price,cost,shipping cost,fee percent,stock,delivery days,image url,fulfillment type,warehouse region,rights cleared,tracked delivery";
+  const valid = "A,Pumpkin,20,5,1,3,2,4,https://supplier.example/a.jpg,physical,EU,true,true";
+  assert.equal(selectSaleProducts(parseFeed(`${header}\n${valid}`)).length, 1);
+  for (const conflict of [
+    " A ,Pumpkin,,5,1,3,0,4,https://supplier.example/a.jpg,physical,EU,false,true",
+    "A,,20,5,1,3,0,4,https://supplier.example/a.jpg,physical,EU,false,true",
+    "A,Pumpkin,-20,5,1,3,0,4,https://supplier.example/a.jpg,physical,EU,false,true",
+    valid,
+  ]) {
+    for (const rows of [[valid, conflict], [conflict, valid]]) {
+      assert.throws(() => parseFeed(`${header}\n${rows.join("\n")}`), /duplicate SKUs/);
+    }
+  }
+});
+
+test("JSON duplicate SKUs block the feed before invalid price or title rows disappear", () => {
+  const valid = { sku: "A", title: "Pumpkin", price: 20, cost: 5, "shipping cost": 1, "fee percent": 3, stock: 2, "delivery days": 4, "image url": "https://supplier.example/a.jpg", "fulfillment type": "physical", "warehouse region": "EU", "rights cleared": true, "tracked delivery": true };
+  assert.equal(selectSaleProducts(parseFeed(JSON.stringify([valid]))).length, 1);
+  for (const invalid of [{ price: "" }, { price: null }, { price: -20 }, { title: "" }]) {
+    const conflict = { ...valid, ...invalid, sku: " A ", stock: 0, "rights cleared": false };
+    for (const rows of [[valid, conflict], [conflict, valid]]) {
+      for (const feed of [rows, { products: rows }]) {
+        assert.throws(() => parseFeed(JSON.stringify(feed)), /duplicate SKUs/);
+      }
+    }
+  }
+});
+
+test("policy failure drafts all old managed products without inventory access or publishing", async () => {
+  const writes: Record<string, unknown>[] = [];
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (body.query.includes("OffhandShopPolicies")) throw new Error("policy unavailable");
+    assert.ok(body.query.includes("OffhandDraftProduct"));
+    const input = body.variables.product;
+    assert.deepEqual(Object.keys(input).sort(), ["id", "status"]);
+    assert.equal(input.status, "DRAFT");
+    writes.push(input);
+    return Response.json({ data: { productUpdate: { product: { id: input.id, status: "DRAFT" }, userErrors: [] } } });
+  };
+  const shelf = Array.from({ length: 6 }, (_, i) => ({ sku: `OLD-${i}`, title: `Old ${i}`, price: 10, stock: 1, status: "active" as const, productId: `gid://shopify/Product/${i}`, published: true }));
+  const result = await pushToShopify({ domain: "demo-shop.myshopify.com", token: "t", actions: [{ type: "list", sku: verifiedCatalog[0].sku }], supplier: verifiedCatalog, shelf, fetchImpl });
+  assert.equal(writes.length, 6);
+  assert.ok(result.shelf.every((item) => item.status === "draft" && item.published === false));
+});
+
+test("failed withdrawal blocks new activation and channel repair", async () => {
+  const mutations: string[] = [];
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (body.query.includes("OffhandShopPolicies")) return Response.json({ data: policies });
+    mutations.push(body.query);
+    assert.equal(body.variables.product.status, "DRAFT");
+    return Response.json({ data: { productUpdate: { product: null, userErrors: [{ message: "denied" }] } } });
+  };
+  const result = await pushToShopify({ domain: "demo-shop.myshopify.com", token: "t", actions: [{ type: "list", sku: verifiedCatalog[0].sku }], supplier: verifiedCatalog, shelf: [{ sku: "OLD", title: "Old", price: 1, stock: 1, status: "active", productId: "gid://shopify/Product/1" }], fetchImpl });
+  assert.equal(mutations.length, 1);
+  assert.equal(result.shelf[0].status, "active");
+  assert.match(result.notes.join(" "), /stayed put/);
+});
+
+test("arrival deadline is exact, rather than rounded up to the next day", () => {
+  const safe = { ...verifiedCatalog[0], title: "Halloween pumpkin", deliveryDays: 3 };
+  assert.equal(selectTrendProducts([safe], new Date("2026-10-28T13:00:00Z")).items.length, 0);
+});
+
+
+test("existing product updates use the API identifier instead of the removed input id", () => {
+  const input = productInput(verifiedCatalog[0], "gid://shopify/Location/1", { ...verifiedCatalog[0], status: "draft", productId: "gid://shopify/Product/1" });
+  assert.equal("id" in input, false);
+  assert.equal((input.variants as {inventoryPolicy: string}[])[0].inventoryPolicy, "DENY");
 });
